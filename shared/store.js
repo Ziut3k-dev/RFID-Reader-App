@@ -28,6 +28,26 @@ export const DEFAULT_SETTINGS = {
   bridgeToken: '',
 };
 
+/**
+ * Powiązanie karty z systemem zewnętrznym (np. chmurą Akuvox): do którego
+ * obiektu i mieszkańca karta została przypisana i czy zmiana doszła do chmury.
+ * Trzymane przy karcie, bo to jej właściwość, a nie osobny rejestr — dzięki
+ * temu usunięcie karty nie zostawia sieroty w mapowaniu.
+ */
+export const EMPTY_LINK = {
+  provider: '',        // '' = karta nie jest nigdzie przypisana
+  siteId: '',
+  siteName: '',
+  apartmentId: '',
+  apartmentName: '',
+  residentId: '',
+  residentName: '',
+  remoteId: '',        // identyfikator karty nadany przez system zewnętrzny
+  state: 'none',       // none | pending | synced | error | removing
+  syncedAt: '',
+  error: '',
+};
+
 const EMPTY = { version: 1, settings: { ...DEFAULT_SETTINGS }, cards: [], scans: [], nextCardId: 1, nextScanId: 1 };
 
 export class Store {
@@ -121,17 +141,44 @@ export class Store {
       .filter((c) => (activeOnly ? c.active : true))
       .filter((c) => {
         if (!needle) return true;
-        return [c.label, c.owner, c.role, c.note, c.uidHex, c.uidDec]
+        return [c.label, c.owner, c.role, c.note, c.uidHex, c.uidDec,
+                c.link?.residentName, c.link?.apartmentName, c.link?.siteName]
           .join(' ')
           .toLowerCase()
           .includes(needle);
       })
       .sort((a, b) => (a.label || a.uidHex).localeCompare(b.label || b.uidHex, 'pl'))
-      .map((c) => ({ ...c, scanCount: this.countScans(c.id) }));
+      .map((c) => ({ ...c, link: { ...EMPTY_LINK, ...c.link }, scanCount: this.countScans(c.id) }));
   }
 
   getCard(id) {
-    return this.data.cards.find((c) => c.id === id) || null;
+    const card = this.data.cards.find((c) => c.id === id);
+    if (!card) return null;
+    // Karty zapisane przed dodaniem integracji nie mają pola link.
+    if (!card.link) card.link = { ...EMPTY_LINK };
+    return card;
+  }
+
+  /**
+   * Zapisuje stan powiązania karty z systemem zewnętrznym. Osobna metoda,
+   * bo updateCard celowo nie przyjmuje pola link — stan synchronizacji zmienia
+   * usługa integracji, nie formularz edycji karty.
+   */
+  setCardLink(id, patch) {
+    const card = this.getCard(id);
+    if (!card) throw new Error(`Nie ma karty o id ${id}`);
+    card.link = { ...EMPTY_LINK, ...card.link, ...patch };
+    card.updatedAt = new Date().toISOString();
+    this.save();
+    return card;
+  }
+
+  /** Karty czekające na wysłanie do systemu zewnętrznego albo z błędem. */
+  listUnsyncedCards() {
+    return this.data.cards.filter((c) => {
+      const state = c.link?.state;
+      return state === 'pending' || state === 'error' || state === 'removing';
+    });
   }
 
   /** Szukanie po obu kolejnościach bajtów — patrz lookupKeys() w shared/core.js. */
@@ -159,6 +206,7 @@ export class Store {
       validFrom: input.validFrom || null,
       validTo: input.validTo || null,
       note: (input.note ?? '').trim(),
+      link: { ...EMPTY_LINK, ...(input.link || {}) },
       createdAt: now,
       updatedAt: now,
     };
@@ -280,10 +328,14 @@ export class Store {
   // --- eksport ---------------------------------------------------------------
 
   cardsCsv() {
-    const head = ['id', 'uid_hex', 'uid_dec', 'label', 'owner', 'role', 'active', 'valid_from', 'valid_to', 'note', 'created_at'];
+    const head = [
+      'id', 'uid_hex', 'uid_dec', 'label', 'owner', 'role', 'active', 'valid_from', 'valid_to',
+      'note', 'created_at', 'integracja', 'obiekt', 'mieszkanie', 'mieszkaniec', 'stan_synchronizacji',
+    ];
     const rows = this.listCards().map((c) => [
       c.id, c.uidHex, c.uidDec, c.label, c.owner, c.role, c.active ? 1 : 0,
       c.validFrom || '', c.validTo || '', c.note, c.createdAt,
+      c.link.provider, c.link.siteName, c.link.apartmentName, c.link.residentName, c.link.state,
     ]);
     return toCsv(head, rows);
   }

@@ -113,3 +113,71 @@ test('eksport kart zawiera nagłówek i wiersze', () => {
   assert.match(csv.split('\r\n')[0], /^id,uid_hex,uid_dec,label/);
   assert.match(csv, /Karta 1,Anna/);
 });
+
+test('karta dostaje puste powiązanie, a setCardLink je uzupełnia', () => {
+  const store = new Store(memoryAdapter());
+  const card = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'K1' });
+  assert.equal(card.link.state, 'none');
+  assert.equal(card.link.provider, '');
+
+  store.setCardLink(card.id, {
+    provider: 'akuvox',
+    siteName: 'Kwiatowa 3',
+    apartmentName: 'm. 12',
+    residentName: 'Anna Kowalska',
+    state: 'pending',
+  });
+  const linked = store.getCard(card.id);
+  assert.equal(linked.link.residentName, 'Anna Kowalska');
+  assert.equal(linked.link.state, 'pending');
+  // Pola nieprzekazane zachowują wartości domyślne, nie znikają.
+  assert.equal(linked.link.remoteId, '');
+});
+
+test('karty zapisane przed integracją dostają pole link przy odczycie', () => {
+  // Baza z poprzedniej wersji aplikacji: karta bez pola link.
+  const legacy = JSON.stringify({
+    version: 1,
+    settings: {},
+    cards: [{ id: 1, uidHex: '0042B7C9', uidDec: '1', label: 'Stara', active: true }],
+    scans: [],
+    nextCardId: 2,
+    nextScanId: 1,
+  });
+  const store = new Store(memoryAdapter(legacy));
+
+  assert.equal(store.getCard(1).link.state, 'none');
+  assert.equal(store.listCards()[0].link.provider, '');
+});
+
+test('lista niezsynchronizowanych obejmuje oczekujące, błędne i usuwane', () => {
+  const store = new Store(memoryAdapter());
+  const states = ['none', 'pending', 'synced', 'error', 'removing'];
+  states.forEach((state, i) => {
+    const card = store.createCard({ uidHex: `0042B7C${i}`, uidDec: String(i), label: state });
+    store.setCardLink(card.id, { provider: 'akuvox', state });
+  });
+
+  const pending = store.listUnsyncedCards().map((c) => c.link.state).sort();
+  assert.deepEqual(pending, ['error', 'pending', 'removing']);
+});
+
+test('szukanie kart obejmuje mieszkańca i obiekt z integracji', () => {
+  const store = new Store(memoryAdapter());
+  const card = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'K1' });
+  store.setCardLink(card.id, { provider: 'akuvox', residentName: 'Anna Kowalska', siteName: 'Kwiatowa 3' });
+
+  assert.equal(store.listCards({ q: 'kowalska' }).length, 1);
+  assert.equal(store.listCards({ q: 'kwiatowa' }).length, 1);
+  assert.equal(store.listCards({ q: 'nie ma' }).length, 0);
+});
+
+test('eksport kart zawiera kolumny powiązania', () => {
+  const store = new Store(memoryAdapter());
+  const card = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'K1' });
+  store.setCardLink(card.id, { provider: 'akuvox', siteName: 'Kwiatowa 3', residentName: 'Anna', state: 'synced' });
+
+  const csv = store.cardsCsv();
+  assert.match(csv.split('\r\n')[0], /integracja,obiekt,mieszkanie,mieszkaniec,stan_synchronizacji$/);
+  assert.match(csv, /akuvox,Kwiatowa 3,,Anna,synced/);
+});
