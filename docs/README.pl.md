@@ -77,9 +77,51 @@ notatka, licznik odczytów, szukajka, eksport CSV.
 **Historia** — dziennik odczytów z filtrami (wynik, zakres dat, wyszukiwanie
 tekstowe), stronicowaniem i eksportem CSV.
 
+**Telefon** — serwer w sieci lokalnej i kod QR do sparowania telefonu jako
+skanera kodów (opis niżej).
+
 **Ustawienia** — tryb interpretacji numeru, reguła dla nieznanej karty
 (odmowa / tryb nauki), nazwa stanowiska, okno blokady powtórnego odczytu, limit
 historii, dźwięk, wykrywanie czytnika na liście USB i diagnostyka odczytu.
+
+## Telefon jako skaner
+
+Serwer włącza się w zakładce **Telefon**. Aplikacja pokazuje kod QR z adresem
+sparowania, np. `http://192.168.1.42:8787/s/<sekret>` — wystarczy skierować na
+niego aplikację Kamera w iPhonie, a Safari otworzy stronę skanera. Telefon
+i komputer muszą być w tej samej sieci Wi-Fi.
+
+Co telefon robi:
+
+* czyta **kody QR i kreskowe** kamerą i wysyła odczytaną treść,
+* przyjmuje numer wpisany ręcznie z etykiety karty,
+* pokazuje wynik — przyznany / odmowa / nieznana — oraz ostatnie odczyty.
+
+Odczyty z telefonu przechodzą **te same** reguły dostępu co odczyty z czytnika
+USB i trafiają do historii ze stanowiskiem z sufiksem `/telefon` lub `/kamera`.
+Pokazują się też w panelu odczytu w aplikacji, więc obsługa przy komputerze
+widzi je na bieżąco.
+
+**Czego telefon nie potrafi:** iPhone nie odczyta karty RFID ze strony
+internetowej. Safari nie ma Web NFC (to API istnieje tylko w Chrome na
+Androidzie), więc do kart zbliżeniowych nadal potrzebny jest czytnik USB.
+Telefon jest skanerem kamery i klawiaturą, nie czytnikiem RFID.
+
+Dwie drogi odczytu kamerą, bo przeglądarki różnie ograniczają do niej dostęp:
+
+| Droga | Gdzie działa | Uwagi |
+| --- | --- | --- |
+| Podgląd na żywo (`getUserMedia`) | Android albo przez HTTPS | Skanowanie ciągłe; ukryte, gdy niedostępne |
+| Zdjęcie z kamery systemowej (`<input capture>`) | Wszędzie, także iOS przez zwykłe http | Jedno zdjęcie na odczyt |
+
+Kody dekodują się w przeglądarce telefonu, więc zdjęcie nigdzie nie jest
+wysyłane — do aplikacji leci tylko odczytany numer.
+
+**Bezpieczeństwo:** serwer nasłuchuje tylko wtedy, gdy jest włączony, a każde
+zapytanie wymaga sekretu z adresu sparowania. Kto zrobi zdjęcie kodu QR, może
+rejestrować odczyty — dlatego warto wygenerować nowy sekret (jeden przycisk)
+albo zatrzymać serwer po pracy. Połączenie nie jest szyfrowane, więc trzymaj je
+w zaufanej sieci. Szczegóły w [SECURITY.md](../SECURITY.md).
 
 ## Reguły dostępu
 

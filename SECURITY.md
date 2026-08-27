@@ -30,8 +30,18 @@ Fixes land on `master` and go out in the next tagged release.
 
 Worth knowing before you assess a finding — several properties are deliberate:
 
-* **No network access.** The app makes no HTTP requests, has no telemetry, no accounts and no
-  auto-update. Packaged builds run with a Content Security Policy restricted to `'self'`.
+* **No outbound network access.** The app makes no HTTP requests, has no telemetry, no accounts and
+  no auto-update. Packaged builds run with a Content Security Policy restricted to `'self'`.
+* **One optional inbound listener.** The *phone as scanner* feature starts a local HTTP server on the
+  LAN (default port 8787). It is **off by default** and must be enabled per session. When enabled:
+  * every request needs the secret from the pairing URL (32 random hex characters, compared in
+    constant time); wrong secret returns 401 and requests are rate-limited per IP,
+  * the `Host` header is validated against the machine's own addresses, which blocks DNS rebinding,
+  * request bodies are capped at 4 KB and only `/s/<secret>` and `/q/<secret>` routes exist,
+  * **traffic is plain HTTP, not encrypted** — use it on a trusted network only,
+  * **anyone who photographs the pairing QR code can register scans.** Regenerate the secret from
+    the app (invalidates earlier pairings) or stop the server when you are done.
+  The phone can only submit a card number; it cannot read or modify the card database.
 * **No production dependencies.** `npm install` pulls development tooling only, which keeps the
   runtime supply-chain surface at Electron itself.
 * **Renderer is sandboxed from Node.** `contextIsolation` is on, `nodeIntegration` is off, and the

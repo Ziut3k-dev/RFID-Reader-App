@@ -64,6 +64,26 @@ export interface Settings {
   station: string;
   sound: boolean;
   maxScans: number;
+  /** Serwer udostępniający telefon jako skaner */
+  bridgeEnabled: boolean;
+  bridgePort: number;
+  /** Sekret w adresie sparowania — nie pokazujemy go poza kodem QR i adresem */
+  bridgeToken: string;
+}
+
+export interface NetworkAddress {
+  name: string;
+  address: string;
+}
+
+export interface BridgeStatus {
+  running: boolean;
+  enabled: boolean;
+  port: number;
+  token: string;
+  error: string | null;
+  addresses: NetworkAddress[];
+  urls: string[];
 }
 
 export interface Stats {
@@ -148,6 +168,14 @@ export interface RfidApi {
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   exportCsv(kind: 'cards' | 'scans'): Promise<{ ok: boolean; canceled?: boolean; filePath?: string }>;
+
+  bridgeStatus(): Promise<BridgeStatus>;
+  bridgeStart(): Promise<BridgeStatus>;
+  bridgeStop(): Promise<BridgeStatus>;
+  bridgeRestart(port?: number): Promise<BridgeStatus>;
+  bridgeRegenerateToken(): Promise<BridgeStatus>;
+  /** Subskrypcja odczytów z telefonu; zwraca funkcję odsubskrybowania. */
+  onPhoneScan(callback: (result: ScanResult) => void): () => void;
   detectReaders(): Promise<ReaderInfo>;
   appInfo(): Promise<AppInfo>;
 }

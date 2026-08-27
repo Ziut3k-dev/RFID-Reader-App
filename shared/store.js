@@ -20,6 +20,12 @@ export const DEFAULT_SETTINGS = {
   sound: true,
   /** Maksymalna liczba przechowywanych odczytów (starsze są usuwane) */
   maxScans: 50000,
+  /** Serwer dla telefonu jako skanera — domyślnie wyłączony (otwiera port w sieci) */
+  bridgeEnabled: false,
+  /** Port serwera telefonu */
+  bridgePort: 8787,
+  /** Sekret w adresie sparowania; puste = wygeneruj przy pierwszym starcie */
+  bridgeToken: '',
 };
 
 const EMPTY = { version: 1, settings: { ...DEFAULT_SETTINGS }, cards: [], scans: [], nextCardId: 1, nextScanId: 1 };
@@ -93,6 +99,15 @@ export class Store {
     if (!['deny', 'enroll'].includes(next.unknownPolicy)) next.unknownPolicy = 'deny';
     next.station = String(next.station || 'default').slice(0, 60);
     next.sound = Boolean(next.sound);
+    next.bridgeEnabled = Boolean(next.bridgeEnabled);
+    // Porty poniżej 1024 wymagają uprawnień administratora, powyżej 65535 nie istnieją.
+    const port = Number(next.bridgePort);
+    next.bridgePort = Number.isInteger(port) && port >= 1024 && port <= 65535
+      ? port
+      : DEFAULT_SETTINGS.bridgePort;
+    next.bridgeToken = /^[0-9a-f]{0,64}$/.test(String(next.bridgeToken || ''))
+      ? String(next.bridgeToken || '')
+      : '';
     this.data.settings = next;
     this.save();
     return this.getSettings();

@@ -35,6 +35,22 @@ contextBridge.exposeInMainWorld('rfid', {
   getSettings: () => call('settings:get'),
   setSettings: (patch) => call('settings:set', patch),
 
+  bridgeStatus: () => call('bridge:status'),
+  bridgeStart: () => call('bridge:start'),
+  bridgeStop: () => call('bridge:stop'),
+  bridgeRestart: (port) => call('bridge:restart', { port }),
+  bridgeRegenerateToken: () => call('bridge:regenerate-token'),
+
+  /**
+   * Odczyty przychodzące z telefonu. Zwraca funkcję odsubskrybowania, żeby
+   * komponent Reacta mógł ją wywołać przy odmontowaniu.
+   */
+  onPhoneScan: (callback) => {
+    const listener = (_event, result) => callback(result);
+    ipcRenderer.on('bridge:scan', listener);
+    return () => ipcRenderer.removeListener('bridge:scan', listener);
+  },
+
   exportCsv: (kind) => call('export:csv', { kind }),
   detectReaders: () => call('reader:detect'),
   appInfo: () => call('app:info'),

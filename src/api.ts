@@ -10,7 +10,7 @@
 
 import { Store } from '../shared/store.js';
 import { ScanService } from '../shared/service.js';
-import type { AppInfo, Card, CardInput, Inspection, ReaderInfo, RfidApi, ScanQuery, ScanResult, Settings, Stats } from './types';
+import type { AppInfo, BridgeStatus, Card, CardInput, Inspection, ReaderInfo, RfidApi, ScanQuery, ScanResult, Settings, Stats } from './types';
 
 const STORAGE_KEY = 'rfid-scanner-data';
 
@@ -34,6 +34,18 @@ function downloadCsv(name: string, csv: string) {
   link.download = name;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function webBridgeStatus(): BridgeStatus {
+  return {
+    running: false,
+    enabled: false,
+    port: 8787,
+    token: '',
+    error: 'Serwer telefonu wymaga aplikacji Electron — w podglądzie przeglądarkowym nie działa.',
+    addresses: [],
+    urls: [],
+  };
 }
 
 function createWebApi(): RfidApi {
@@ -64,6 +76,15 @@ function createWebApi(): RfidApi {
       downloadCsv(kind === 'cards' ? `karty-${stamp()}.csv` : `historia-${stamp()}.csv`, csv);
       return { ok: true };
     },
+    // Serwer telefonu żyje w procesie głównym — w podglądzie przeglądarkowym
+    // go nie ma, więc zgłaszamy stan wyłączony wraz z wyjaśnieniem.
+    bridgeStatus: async (): Promise<BridgeStatus> => webBridgeStatus(),
+    bridgeStart: async () => webBridgeStatus(),
+    bridgeStop: async () => webBridgeStatus(),
+    bridgeRestart: async () => webBridgeStatus(),
+    bridgeRegenerateToken: async () => webBridgeStatus(),
+    onPhoneScan: () => () => {},
+
     detectReaders: async (): Promise<ReaderInfo> => ({
       supported: false,
       platform: 'web',

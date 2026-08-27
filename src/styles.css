@@ -335,3 +335,17 @@ details summary { cursor: pointer; font-size: 12px; color: var(--text-mute); mar
 .toast--success { border-color: rgba(53, 208, 127, 0.45); color: var(--ok); }
 .toast--error { border-color: rgba(255, 93, 108, 0.45); color: var(--bad); }
 @keyframes slide-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* --- parowanie telefonu --------------------------------------------------- */
+
+.pairing { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.pairing__qr {
+  width: 200px; height: 200px; flex: none;
+  border-radius: 10px; background: #fff; padding: 6px;
+}
+.pairing__qr--empty { display: grid; place-items: center; background: var(--bg); color: var(--text-mute); font-size: 12px; }
+.pairing__steps { margin: 0; padding-left: 20px; font-size: 12.5px; color: var(--text-dim); display: flex; flex-direction: column; gap: 6px; }
+.pairing__pick { display: flex; flex-direction: column; gap: 5px; margin-top: 16px; font-size: 11.5px; color: var(--text-dim); }
+.pairing__url { margin-top: 14px; padding: 9px 12px; background: var(--bg); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); }
+.pairing__url code { font-size: 11.5px; color: var(--text-dim); word-break: break-all; }
+.card__lead code, .card__note code { padding: 1px 5px; background: var(--bg); border-radius: 4px; font-size: 11.5px; color: var(--text-dim); }

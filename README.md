@@ -47,7 +47,10 @@ Practical consequences:
 * **Reader diagnostics** — shows the exact characters the reader sent, the typing speed
   (machine vs. human) and how the number is interpreted in each of the three modes.
 * **Access rules** — block flag, validity window, repeat-scan suppression, station name per reading.
-* **Offline by design** — no network calls, no telemetry, no accounts. Data stays in one local file.
+* **iPhone as a scanner** — the app can serve a scanner page on your LAN and show a QR code to pair
+  a phone; the phone reads QR/barcodes with its camera and the scans land in the same pipeline.
+* **Offline by design** — no outbound network calls, no telemetry, no accounts. Data stays in one
+  local file, and the optional phone server is off by default.
 
 ## 🛠️ Tech stack
 
@@ -58,6 +61,7 @@ Practical consequences:
 | Logic | Plain JavaScript in `shared/` — shared by the main process and the renderer |
 | Storage | Single JSON file, written atomically (temp file + `rename`) |
 | Hardware | USB HID keyboard events (no native modules, no `pip`/`node-gyp` build step) |
+| Phone bridge | Node's built-in `http` server + a second Vite entry point for the phone page |
 | Packaging | electron-builder 26 → dmg/zip, NSIS/portable, AppImage/deb/tar.gz |
 
 **Zero production dependencies.** `npm install` pulls dev tooling only, so there is nothing to
@@ -106,6 +110,41 @@ separate field.
 The interpretation mode lives in **Settings** (`AUTO` / `DEC` / `HEX`). If you don't know which mode
 your reader uses, open **Reader diagnostics** and tap a card: it prints the raw characters and the
 result in all three modes side by side.
+
+## 📱 iPhone as a scanner
+
+Enable the server under the **Telefon** tab. The app shows a QR code with a pairing URL like
+`http://192.168.1.42:8787/s/<secret>`; point the iPhone's Camera app at it and Safari opens the
+scanner page. Phone and computer must be on the same Wi-Fi.
+
+What the phone does:
+
+* reads **QR and barcodes** with the camera and submits the decoded value,
+* accepts a number typed by hand (from a badge label),
+* shows the verdict — granted / denied / unknown — plus the recent scans.
+
+Scans from the phone go through the *same* access rules as the USB reader and appear in history with
+the station suffixed `/telefon` or `/kamera`. They also pop up on the desktop scan panel, so an
+operator watching the app sees them live.
+
+**What the phone cannot do:** an iPhone cannot read an RFID card from a web page. Safari has no Web
+NFC (that API exists only in Chrome on Android), so contactless cards still need the USB reader. The
+phone is a camera scanner and a keypad, not an RFID reader.
+
+Two camera paths, because browsers gate camera access differently:
+
+| Path | Works where | Notes |
+| --- | --- | --- |
+| Live preview (`getUserMedia`) | Android, or over HTTPS | Continuous scanning; hidden when unavailable |
+| Photo from the system camera (`<input capture>`) | Everywhere, including iOS over plain HTTP | One photo per scan |
+
+Codes are decoded in the phone's browser, so photos never leave the device — only the decoded number
+is sent.
+
+**Security:** the server listens only while enabled and every request needs the secret from the
+pairing URL. Anyone who photographs the QR code can register scans, so regenerate the secret (one
+button) or stop the server when you're done, and keep it on a trusted network — the connection is not
+encrypted. See [SECURITY.md](SECURITY.md) for the full picture.
 
 ## 🔐 Access rules
 

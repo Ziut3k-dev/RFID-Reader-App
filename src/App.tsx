@@ -5,14 +5,16 @@ import { ScanPanel } from './components/ScanPanel';
 import { CardsPanel } from './components/CardsPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import { SettingsPanel } from './components/SettingsPanel';
+import { PhonePanel } from './components/PhonePanel';
 import { ToastStack, useToasts } from './components/Toasts';
 
-type Tab = 'scan' | 'cards' | 'history' | 'settings';
+type Tab = 'scan' | 'cards' | 'history' | 'phone' | 'settings';
 
 const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: 'scan', label: 'Skanowanie', hint: 'Odczyt kart z czytnika' },
   { id: 'cards', label: 'Karty', hint: 'Baza kart i uprawnień' },
   { id: 'history', label: 'Historia', hint: 'Dziennik odczytów' },
+  { id: 'phone', label: 'Telefon', hint: 'Telefon jako skaner kodów' },
   { id: 'settings', label: 'Ustawienia', hint: 'Czytnik i reguły' },
 ];
 
@@ -106,6 +108,7 @@ export function App() {
         )}
         {tab === 'cards' && <CardsPanel notify={notify} onChange={refreshStats} />}
         {tab === 'history' && <HistoryPanel notify={notify} />}
+        {tab === 'phone' && <PhonePanel settings={settings} notify={notify} />}
         {tab === 'settings' && (
           <SettingsPanel settings={settings} onSave={saveSettings} notify={notify} />
         )}

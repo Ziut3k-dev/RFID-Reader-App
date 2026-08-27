@@ -10,6 +10,7 @@ import { Store } from '../shared/store.js';
 import { ScanService } from '../shared/service.js';
 import { detectReaders } from './reader.js';
 import { fileAdapter } from './persistence.js';
+import { PhoneBridge } from './bridge.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -23,6 +24,7 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 
 let store;
 let service;
+let bridge;
 let mainWindow = null;
 
 function dataFile() {
@@ -31,6 +33,10 @@ function dataFile() {
     return path.join(app.getAppPath(), 'data', 'rfid-data.json');
   }
   return path.join(app.getPath('userData'), 'rfid-data.json');
+}
+
+function distDir() {
+  return path.join(__dirname, '..', 'dist');
 }
 
 function createWindow() {
@@ -144,6 +150,34 @@ function handle(channel, fn) {
 }
 
 function registerIpc() {
+  // Serwer telefonu. Odczyty z telefonu przechodzą tę samą logikę co odczyty
+  // z czytnika USB, a wynik trafia do okna, żeby panel odczytu pokazał go
+  // tak samo jak kartę zbliżoną do czytnika.
+  handle('bridge:status', () => bridge.status());
+  handle('bridge:start', async () => {
+    store.setSettings({ bridgeEnabled: true });
+    return bridge.start();
+  });
+  handle('bridge:stop', async () => {
+    store.setSettings({ bridgeEnabled: false });
+    return bridge.stop();
+  });
+  handle('bridge:restart', async ({ port } = {}) => {
+    if (port) store.setSettings({ bridgePort: port });
+    await bridge.stop();
+    return bridge.start();
+  });
+  handle('bridge:regenerate-token', async () => {
+    // Nowy sekret unieważnia wcześniejsze parowania — trzeba zeskanować
+    // kod QR na nowo.
+    bridge.regenerateToken();
+    if (bridge.status().running) {
+      await bridge.stop();
+      return bridge.start();
+    }
+    return bridge.status();
+  });
+
   // Odczyt karty — jedyny kanał wywoływany w gorącej ścieżce.
   ipcMain.handle('scan:process', (_e, { raw, station } = {}) => service.processScan(raw, { station }));
   ipcMain.handle('scan:inspect', (_e, { raw } = {}) => service.inspect(raw));
@@ -212,9 +246,23 @@ if (!app.requestSingleInstanceLock()) {
     applyContentSecurityPolicy();
     store = new Store(fileAdapter(dataFile()));
     service = new ScanService(store);
+    bridge = new PhoneBridge({
+      store,
+      service,
+      distDir: distDir(),
+      onScan: (result) => mainWindow?.webContents.send('bridge:scan', result),
+    });
     registerIpc();
     buildMenu();
     createWindow();
+
+    // Serwer wraca do stanu z poprzedniej sesji, żeby po ponownym
+    // uruchomieniu telefon nie wymagał parowania od nowa.
+    if (store.getSettings().bridgeEnabled) {
+      bridge.start().then((status) => {
+        if (status.error) console.error(`Serwer telefonu: ${status.error}`);
+      });
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -228,5 +276,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     // Zapis jest odroczony — przed wyjściem wymuszamy zrzut na dysk.
     try { store?.flush(); } catch { /* ignorujemy */ }
+    try { void bridge?.stop(); } catch { /* ignorujemy */ }
   });
 }

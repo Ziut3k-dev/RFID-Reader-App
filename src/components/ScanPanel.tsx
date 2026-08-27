@@ -20,6 +20,7 @@ export function ScanPanel({ settings, stats, onStatsChange, notify }: Props) {
   const [recent, setRecent] = useState<Scan[]>([]);
   const [manual, setManual] = useState('');
   const [busy, setBusy] = useState(false);
+  const [fromPhone, setFromPhone] = useState(false);
   const flashRef = useRef<HTMLDivElement>(null);
 
   const loadRecent = useCallback(async () => {
@@ -39,6 +40,7 @@ export function ScanPanel({ settings, stats, onStatsChange, notify }: Props) {
     async (raw: string, scanMeta?: WedgeMeta) => {
       setBusy(true);
       setMeta(scanMeta ?? null);
+      setFromPhone(false);
       try {
         const res = await api.scan(raw, settings.station);
         setResult(res);
@@ -64,6 +66,23 @@ export function ScanPanel({ settings, stats, onStatsChange, notify }: Props) {
     },
     [loadRecent, notify, onStatsChange, settings.sound, settings.station],
   );
+
+  // Odczyty z telefonu przychodzą z procesu głównego i mają wyglądać w panelu
+  // dokładnie jak karta zbliżona do czytnika — inaczej obsługa nie wiedziałaby,
+  // czy odczyt doszedł.
+  useEffect(() => {
+    const unsubscribe = api.onPhoneScan((res) => {
+      setResult(res);
+      setMeta(null);
+      setFromPhone(true);
+      if (res.ok && settings.sound) playFeedback(res.decision!);
+      if (res.ok && res.decision !== 'duplicate') {
+        void loadRecent();
+        onStatsChange();
+      }
+    });
+    return unsubscribe;
+  }, [loadRecent, onStatsChange, settings.sound]);
 
   useKeyboardWedge({
     enabled: armed,
@@ -105,6 +124,7 @@ export function ScanPanel({ settings, stats, onStatsChange, notify }: Props) {
             {armed ? 'Nasłuch aktywny' : 'Nasłuch wyłączony'}
           </button>
           {busy && <span className="reader__busy">przetwarzanie…</span>}
+          {fromPhone && <span className="chip chip--ok">odczyt z telefonu</span>}
           {meta && (
             <span className="reader__meta" title="Tempo pisania rozpoznane przy ostatnim odczycie">
               {meta.chars} znaków · {meta.avgGapMs} ms/znak ·{' '}
