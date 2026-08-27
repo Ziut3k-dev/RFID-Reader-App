@@ -14,12 +14,9 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Uruchomienie ręczne tylko buduje i zostawia paczki jako artefakty
+  # przebiegu — wydanie powstaje wyłącznie z tagu.
   workflow_dispatch:
-    inputs:
-      publish:
-        description: 'Utwórz wydanie (roboczy szkic) po zbudowaniu'
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -110,8 +107,10 @@ jobs:
   release:
     name: Wydanie GitHub
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/download-artifact@v8
@@ -122,29 +121,65 @@ jobs:
       - name: Lista plików wydania
         run: ls -lh pliki
 
-      - uses: softprops/action-gh-release@v3
-        with:
-          files: pliki/*
-          draft: true
-          generate_release_notes: true
-          name: RFID Scanner ${{ github.ref_name }}
-          body: |
-            Instalatory czytnika RFID dla trzech systemów.
+      # Wydanie tworzy gh CLI (jest na runnerze) w pętli z ponawianiem.
+      # API GitHuba potrafi zwrócić przelotny błąd 5xx — bez ponowienia
+      # przepadałby cały przebieg razem z trzema zbudowanymi platformami.
+      - name: Utwórz szkic wydania i wyślij paczki
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          cat > notatki.md <<'NOTES'
+          Instalatory czytnika RFID dla trzech systemów.
 
-            | System | Plik |
-            | --- | --- |
-            | macOS (Apple Silicon) | `*-mac-arm64.dmg` |
-            | macOS (Intel) | `*-mac-x64.dmg` |
-            | Windows | `RFID-Scanner-Setup-*.exe` (instalator) lub `*-Portable-*.exe` |
-            | Linux | `*.AppImage`, `*.deb` lub `*.tar.gz` |
+          | System | Plik |
+          | --- | --- |
+          | macOS (Apple Silicon) | `*-mac-arm64.dmg` |
+          | macOS (Intel) | `*-mac-x64.dmg` |
+          | Windows | `RFID-Scanner-Setup-*.exe` (instalator) lub `*-Portable-*.exe` |
+          | Linux | `*.AppImage`, `*.deb` lub `*.tar.gz` |
 
-            Paczki nie są podpisane certyfikatem, dlatego przy pierwszym
-            uruchomieniu system pokaże ostrzeżenie:
+          Paczki nie są podpisane certyfikatem, dlatego przy pierwszym
+          uruchomieniu system pokaże ostrzeżenie:
 
-            * **macOS** — kliknij aplikację prawym przyciskiem i wybierz
-              „Otwórz”, albo wykonaj
-              `xattr -dr com.apple.quarantine "/Applications/RFID Scanner.app"`.
-            * **Windows** — w oknie SmartScreen wybierz „Więcej informacji”,
-              następnie „Uruchom mimo to”.
-            * **Linux (AppImage)** — nadaj prawo wykonywania:
-              `chmod +x RFID-Scanner-*.AppImage`.
+          * **macOS** — kliknij aplikację prawym przyciskiem i wybierz „Otwórz”,
+            albo wykonaj
+            `xattr -dr com.apple.quarantine "/Applications/RFID Scanner.app"`.
+          * **Windows** — w oknie SmartScreen wybierz „Więcej informacji”,
+            następnie „Uruchom mimo to”.
+          * **Linux (AppImage)** — nadaj prawo wykonywania:
+            `chmod +x RFID-Scanner-*.AppImage`.
+          NOTES
+
+          for attempt in 1 2 3; do
+            if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+              echo "Wydanie $TAG już istnieje — dokładam pliki."
+              break
+            fi
+            if gh release create "$TAG" --repo "$REPO" --draft \
+                 --title "RFID Scanner $TAG" --notes-file notatki.md; then
+              echo "Utworzono szkic wydania $TAG."
+              break
+            fi
+            echo "::warning::Próba $attempt utworzenia wydania nie wyszła, ponawiam."
+            sleep $((attempt * 15))
+          done
+
+          if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "::error::Nie udało się utworzyć wydania $TAG."
+            exit 1
+          fi
+
+          for attempt in 1 2 3; do
+            if gh release upload "$TAG" pliki/* --repo "$REPO" --clobber; then
+              echo "Paczki wysłane."
+              exit 0
+            fi
+            echo "::warning::Próba $attempt wysłania paczek nie wyszła, ponawiam."
+            sleep $((attempt * 15))
+          done
+
+          echo "::error::Nie udało się wysłać paczek do wydania $TAG."
+          exit 1
