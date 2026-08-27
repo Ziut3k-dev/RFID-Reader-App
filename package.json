@@ -1,6 +1,6 @@
 {
   "name": "rfid-scanner",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Aplikacja do obsługi czytnika RFID USB 13.56 MHz (ISO14443A, S50/S70) w trybie HID keyboard-wedge",
   "homepage": "https://github.com/Ziut3k-dev/RFID-Reader-App",
   "repository": {
