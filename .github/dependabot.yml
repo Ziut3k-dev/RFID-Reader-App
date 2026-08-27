@@ -1,0 +1,30 @@
+# Automatyczne propozycje aktualizacji zależności.
+#
+# Projekt nie ma zależności produkcyjnych, ale Electron jest zależnością
+# deweloperską, która trafia do gotowej paczki — jego podatności są realne
+# dla użytkownika aplikacji, dlatego aktualizacje warto dostawać na bieżąco.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Narzędzia budujące aktualizujemy zbiorczo — pojedyncze PR-y na każdy
+      # pakiet typu @types/* tylko zaśmiecają listę.
+      narzedzia-dev:
+        patterns: ['*']
+        exclude-patterns: ['electron']
+        update-types: [minor, patch]
+    commit-message:
+      prefix: 'deps'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'ci'
