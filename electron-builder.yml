@@ -98,10 +98,11 @@ linux:
       arch: [x64, arm64]
     - target: tar.gz
       arch: [x64, arm64]
+  # Przepisuje desktopName z package.json do wpisu .desktop jako StartupWMClass,
+  # dzięki czemu menedżer okien kojarzy działające okno z ikoną w doku.
+  syncDesktopName: true
   desktop:
     entry:
-      # Bez tego menedżer okien nie skojarzy okna z ikoną w doku.
-      StartupWMClass: rfid-scanner
       Keywords: rfid;nfc;mifare;iso14443a;czytnik;
 
 deb:
