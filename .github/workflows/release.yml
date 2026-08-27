@@ -1,0 +1,150 @@
+# Buduje instalatory na trzech systemach i publikuje je jako wydanie GitHuba.
+#
+# Uruchomienie:
+#   git tag v1.0.0 && git push origin v1.0.0
+# albo ręcznie z zakładki Actions (domyślnie bez tworzenia wydania).
+#
+# Każdy system buduje się na własnym runnerze — instalator .dmg wymaga macOS,
+# a .exe Windowsa, więc budowanie wszystkiego na jednej maszynie nie jest
+# możliwe bez obejść. Wydanie tworzy dopiero osobne zadanie, gdy wszystkie
+# trzy paczki są gotowe.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Utwórz wydanie (roboczy szkic) po zbudowaniu'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS (dmg, zip · arm64 + x64)
+            os: macos-latest
+            script: dist:mac
+            pattern: |
+              release/*.dmg
+              release/*.zip
+          - label: Windows (instalator, portable)
+            os: windows-latest
+            script: dist:win
+            pattern: |
+              release/*.exe
+          - label: Linux (AppImage, deb, tar.gz)
+            os: ubuntu-latest
+            script: dist:linux
+            pattern: |
+              release/*.AppImage
+              release/*.deb
+              release/*.tar.gz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Electron i narzędzia pakujące to kilkaset megabajtów pobierane przy
+      # każdym buildzie — cache skraca przebieg o kilka minut.
+      - name: Cache pobranych plików Electrona
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-electron-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-electron-
+
+      - run: npm ci
+
+      # Wersja w package.json musi zgadzać się z tagiem — inaczej pliki
+      # w wydaniu miałyby inny numer niż samo wydanie.
+      - name: Sprawdź zgodność wersji z tagiem
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME nie zgadza się z wersją w package.json ($pkg)."
+            exit 1
+          fi
+          echo "Wersja $pkg zgodna z tagiem."
+
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Zbuduj instalatory
+        run: npm run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ runner.os }}-instalatory
+          path: ${{ matrix.pattern }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Wydanie GitHub
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: pliki
+          merge-multiple: true
+
+      - name: Lista plików wydania
+        run: ls -lh pliki
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: pliki/*
+          draft: true
+          generate_release_notes: true
+          name: RFID Scanner ${{ github.ref_name }}
+          body: |
+            Instalatory czytnika RFID dla trzech systemów.
+
+            | System | Plik |
+            | --- | --- |
+            | macOS (Apple Silicon) | `*-mac-arm64.dmg` |
+            | macOS (Intel) | `*-mac-x64.dmg` |
+            | Windows | `RFID-Scanner-Setup-*.exe` (instalator) lub `*-Portable-*.exe` |
+            | Linux | `*.AppImage`, `*.deb` lub `*.tar.gz` |
+
+            Paczki nie są podpisane certyfikatem, dlatego przy pierwszym
+            uruchomieniu system pokaże ostrzeżenie:
+
+            * **macOS** — kliknij aplikację prawym przyciskiem i wybierz
+              „Otwórz”, albo wykonaj
+              `xattr -dr com.apple.quarantine "/Applications/RFID Scanner.app"`.
+            * **Windows** — w oknie SmartScreen wybierz „Więcej informacji”,
+              następnie „Uruchom mimo to”.
+            * **Linux (AppImage)** — nadaj prawo wykonywania:
+              `chmod +x RFID-Scanner-*.AppImage`.

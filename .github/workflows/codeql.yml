@@ -1,0 +1,68 @@
+# Analiza CodeQL — statyczne wyszukiwanie podatności w kodzie aplikacji.
+#
+# Wyniki trafiają do zakładki Security → Code scanning. Zestaw
+# security-and-quality obejmuje reguły bezpieczeństwa oraz typowe błędy
+# jakościowe; dla aplikacji Electrona istotne są zwłaszcza reguły dotyczące
+# przepływu niezaufanych danych do wykonania kodu.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  schedule:
+    # Poniedziałek, 5:17 UTC — wykrywa podatności zgłoszone po ostatniej zmianie
+    # w kodzie, bez czekania na kolejny commit.
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analiza (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Jeden język: JavaScript i TypeScript CodeQL analizuje wspólnie.
+        # Obejmuje proces główny Electrona, preload, shared/ oraz interfejs React.
+        language: [javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inicjalizacja CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+          config: |
+            paths-ignore:
+              - dist
+              - release
+              - node_modules
+
+      # Projekt nie wymaga kompilacji do analizy (TypeScript jest czytany
+      # bezpośrednio), ale sprawdzenie typów wyłapuje kod, który i tak by nie
+      # przeszedł, więc analiza nie marnuje czasu na wersję niekompilowalną.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+      - name: Analiza CodeQL
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}

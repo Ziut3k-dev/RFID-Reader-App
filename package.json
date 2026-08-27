@@ -1,0 +1,58 @@
+{
+  "name": "rfid-scanner",
+  "version": "1.0.0",
+  "description": "Aplikacja do obsługi czytnika RFID USB 13.56 MHz (ISO14443A, S50/S70) w trybie HID keyboard-wedge",
+  "homepage": "https://github.com/Ziut3k-dev/RFID-Reader-App",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ziut3k-dev/RFID-Reader-App.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ziut3k-dev/RFID-Reader-App/issues"
+  },
+  "keywords": [
+    "rfid",
+    "nfc",
+    "iso14443a",
+    "mifare",
+    "s50",
+    "s70",
+    "electron",
+    "react",
+    "hid",
+    "access-control"
+  ],
+  "main": "electron/main.js",
+  "author": "k.wlodarski",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"vite\" \"wait-on tcp:5173 && cross-env NODE_ENV=development electron .\"",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.js",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "icon": "electron scripts/make-icon.js",
+    "pack": "npm run build && electron-builder --dir --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never",
+    "dist:all": "npm run build && electron-builder --mac --win --linux --publish never"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.0.0",
+    "electron-builder": "^26.15.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "wait-on": "^8.0.2"
+  }
+}
