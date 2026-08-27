@@ -41,6 +41,10 @@ jobs:
   analyze:
     name: Analiza (${{ matrix.language }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     strategy:
       fail-fast: false
       matrix:

@@ -11,6 +11,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Domyślnie GITHUB_TOKEN dostaje szeroki zakres uprawnień. Testy i pakowanie
+# potrzebują wyłącznie odczytu repozytorium — jawne zawężenie ogranicza skutki
+# ewentualnego wykonania niezaufanego kodu w przebiegu (np. ze skryptu
+# postinstall zależności).
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Testy i typy

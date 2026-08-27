@@ -18,8 +18,10 @@ on:
   # przebiegu — wydanie powstaje wyłącznie z tagu.
   workflow_dispatch:
 
+# Buildy potrzebują tylko odczytu; prawo zapisu dostaje wyłącznie zadanie
+# tworzące wydanie (patrz permissions w zadaniu release).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -29,6 +31,8 @@ jobs:
   build:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
