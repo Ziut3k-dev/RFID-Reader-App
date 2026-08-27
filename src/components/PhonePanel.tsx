@@ -157,20 +157,19 @@ export function PhonePanel({ settings, notify }: Props) {
         <div className="card">
           <h3 className="card__title">Co telefon potrafi</h3>
           <p className="card__lead">
-            Strona skanera czyta <strong>kody QR i kreskowe</strong> kamerą telefonu, a numer
-            z etykiety można wpisać ręcznie. Odczyt przechodzi te same reguły co karta zbliżona do
-            czytnika USB i trafia do historii ze stanowiskiem <code>{settings.station}/telefon</code>.
+            Strona na telefonie przyjmuje <strong>numer wpisany z etykiety karty</strong> i pokazuje
+            wynik. Odczyt przechodzi te same reguły co karta zbliżona do czytnika USB i trafia do
+            historii ze stanowiskiem <code>{settings.station}/telefon</code>.
           </p>
           <p className="card__note">
-            <strong>Czego nie potrafi:</strong> iPhone nie odczyta karty RFID ze strony internetowej —
-            Safari nie udostępnia NFC (to API mają tylko przeglądarki na Androidzie). Do samych kart
-            zbliżeniowych 13,56 MHz nadal potrzebny jest czytnik USB przy komputerze.
+            <strong>Czego nie potrafi:</strong> telefonem nie da się odczytać karty zbliżeniowej —
+            przeglądarki na iPhonie nie mają dostępu do NFC (Safari nie implementuje Web NFC, to API
+            istnieje tylko w Chrome na Androidzie). Kartę odczytuje czytnik USB przy komputerze.
+            Odczyt kart wbudowanym czytnikiem NFC iPhone'a wymagałby osobnej aplikacji natywnej.
           </p>
           <p className="card__note">
-            Podgląd kamery na żywo wymaga bezpiecznego połączenia, którego zwykłe
-            <code>http://</code> w sieci lokalnej nie zapewnia — dlatego na iPhonie strona używa
-            zdjęcia z kamery systemowej (jedno zdjęcie na odczyt). Kod dekoduje się w przeglądarce
-            telefonu, więc zdjęcie nigdzie nie jest wysyłane.
+            Karty oznaczone kodem QR z adresem <code>/q/&lt;sekret&gt;/&lt;numer&gt;</code> rejestrują
+            się po zeskanowaniu systemową aplikacją Kamera — bez otwierania tej strony.
           </p>
         </div>
 
