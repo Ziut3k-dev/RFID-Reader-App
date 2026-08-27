@@ -158,9 +158,25 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-Można też uruchomić go ręcznie z zakładki Actions (domyślnie tylko buduje).
+Uruchomienie ręczne z zakładki Actions tylko buduje i zostawia paczki jako
+artefakty przebiegu — wydanie powstaje wyłącznie z tagu.
 [`ci.yml`](../.github/workflows/ci.yml) przy każdym pushu i pull requeście
 uruchamia testy, kontrolę typów i próbne spakowanie na trzech systemach.
+
+## Skanowanie kodu
+
+[`codeql.yml`](../.github/workflows/codeql.yml) uruchamia CodeQL z zestawem
+`security-and-quality` przy każdym pushu, pull requeście i raz w tygodniu.
+**Jednorazowe ustawienie w repozytorium:** GitHub włącza publicznym repozytoriom
+własną domyślną konfigurację skanowania, która odrzuca wyniki z workflow — krok
+analizy kończy się wtedy błędem, mimo że sam skan przebiega poprawnie. Wyłącz ją
+w *Settings → Code security → Code scanning → CodeQL analysis → Disable*, albo
+usuń `codeql.yml` i zostaw domyślną konfigurację GitHuba (skanowanie działa,
+tylko bez kontroli nad zestawem reguł i harmonogramem).
+
+[Dependabot](../.github/dependabot.yml) raz w tygodniu proponuje aktualizacje
+zależności i akcji. Electron jest zależnością deweloperską, ale trafia do
+gotowej paczki, więc jego podatności dotyczą użytkownika aplikacji.
 
 Paczki nie są podpisane, więc wydanie nie wymaga żadnych sekretów. Aby podpisać
 build macOS, usuń `identity: null` z `electron-builder.yml` i ustaw sekrety

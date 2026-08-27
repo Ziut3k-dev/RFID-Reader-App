@@ -182,9 +182,24 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-You can also start it from the Actions tab (it only builds unless you tick *publish*). Review the
-draft, then hit Publish. [`ci.yml`](.github/workflows/ci.yml) runs tests, typecheck and a trial
-packaging on all three systems for every push and pull request.
+Running it manually from the Actions tab only builds and keeps the packages as run artifacts — a
+release is created from a tag only. Review the draft, then hit Publish.
+[`ci.yml`](.github/workflows/ci.yml) runs tests, typecheck and a trial packaging on all three
+systems for every push and pull request.
+
+### Code scanning
+
+[`codeql.yml`](.github/workflows/codeql.yml) runs CodeQL with the `security-and-quality` suite on
+every push, every pull request and weekly. **One-time repository setting:** GitHub enables its own
+*default setup* for code scanning on public repositories, and that blocks results uploaded by a
+custom workflow — the analysis step fails even though the scan itself ran fine. Disable it under
+*Settings → Code security → Code scanning → CodeQL analysis → Disable*, or delete `codeql.yml` and
+keep GitHub's default setup instead (scanning still works, you just don't control the query suite or
+the schedule).
+
+[Dependabot](.github/dependabot.yml) proposes dependency and action updates weekly. Electron is a
+dev dependency but ships inside the packaged app, so its advisories affect end users — worth keeping
+current.
 
 ### Code signing
 
