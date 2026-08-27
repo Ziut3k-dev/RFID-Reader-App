@@ -66,7 +66,7 @@ jobs:
       # Electron i narzędzia pakujące to kilkaset megabajtów pobierane przy
       # każdym buildzie — cache skraca przebieg o kilka minut.
       - name: Cache pobranych plików Electrona
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/electron

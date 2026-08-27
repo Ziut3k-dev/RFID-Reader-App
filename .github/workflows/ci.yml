@@ -41,7 +41,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Cache pobranych plików Electrona
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/electron
