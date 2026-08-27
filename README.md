@@ -8,7 +8,7 @@ Reads contactless cards, keeps a card database with permissions, and logs every 
 [![CI](https://github.com/Ziut3k-dev/RFID-Reader-App/actions/workflows/ci.yml/badge.svg)](https://github.com/Ziut3k-dev/RFID-Reader-App/actions/workflows/ci.yml)
 [![Release](https://github.com/Ziut3k-dev/RFID-Reader-App/actions/workflows/release.yml/badge.svg)](https://github.com/Ziut3k-dev/RFID-Reader-App/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Electron](https://img.shields.io/badge/Electron-34-47848F.svg)](https://electronjs.org)
+[![Electron](https://img.shields.io/badge/Electron-43-47848F.svg)](https://electronjs.org)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://react.dev)
 
 🇵🇱 [Wersja polska](docs/README.pl.md)
@@ -53,8 +53,8 @@ Practical consequences:
 
 | Layer | Choice |
 | --- | --- |
-| Shell | Electron 34 (context isolation on, `nodeIntegration` off, CSP in packaged builds) |
-| UI | React 19 + TypeScript 5.7, bundled by Vite 6 |
+| Shell | Electron 43 (context isolation on, `nodeIntegration` off, CSP in packaged builds) |
+| UI | React 19 + TypeScript 7, bundled by Vite 8 |
 | Logic | Plain JavaScript in `shared/` — shared by the main process and the renderer |
 | Storage | Single JSON file, written atomically (temp file + `rename`) |
 | Hardware | USB HID keyboard events (no native modules, no `pip`/`node-gyp` build step) |

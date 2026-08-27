@@ -1,5 +1,15 @@
 # Analiza CodeQL — statyczne wyszukiwanie podatności w kodzie aplikacji.
 #
+# WAŻNE — jednorazowe ustawienie w repozytorium:
+# GitHub włącza publicznym repozytoriom "default setup" skanowania kodu, który
+# blokuje wysyłanie wyników z własnego workflow (krok analizy kończy się wtedy
+# błędem, mimo że sama analiza przebiega poprawnie). Aby ten plik działał,
+# wyłącz domyślną konfigurację:
+#   Settings → Code security → Code scanning → CodeQL analysis → ... → Disable
+# Alternatywa: zostawić domyślną konfigurację GitHuba i usunąć ten plik —
+# skanowanie działa wtedy bez workflow, ale bez kontroli nad zestawem reguł
+# i harmonogramem.
+#
 # Wyniki trafiają do zakładki Security → Code scanning. Zestaw
 # security-and-quality obejmuje reguły bezpieczeństwa oraz typowe błędy
 # jakościowe; dla aplikacji Electrona istotne są zwłaszcza reguły dotyczące
@@ -39,10 +49,10 @@ jobs:
         language: [javascript-typescript]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Inicjalizacja CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           queries: security-and-quality
@@ -55,7 +65,7 @@ jobs:
       # Projekt nie wymaga kompilacji do analizy (TypeScript jest czytany
       # bezpośrednio), ale sprawdzenie typów wyłapuje kod, który i tak by nie
       # przeszedł, więc analiza nie marnuje czasu na wersję niekompilowalną.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -63,6 +73,6 @@ jobs:
       - run: npm run typecheck
 
       - name: Analiza CodeQL
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
