@@ -178,6 +178,38 @@ tylko bez kontroli nad zestawem reguł i harmonogramem).
 zależności i akcji. Electron jest zależnością deweloperską, ale trafia do
 gotowej paczki, więc jego podatności dotyczą użytkownika aplikacji.
 
+## Podpisywanie commitów i tagów
+
+Commity i tagi są podpisywane kluczem SSH, dzięki czemu GitHub oznacza je jako
+**Verified**. To co innego niż podpisywanie instalatorów niżej: tu chodzi o to,
+kto jest autorem commita, tam — kto zbudował plik wykonywalny.
+
+Konfiguracja na świeżym klonie:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_signing -C "ty@example.com (git signing)"
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/id_ed25519_signing.pub
+git config commit.gpgsign true
+git config tag.gpgsign true
+```
+
+Klucz **publiczny** dodaj na GitHubie w *Settings → SSH and GPG keys →
+New SSH key*, wybierając typ **Signing Key** — klucz uwierzytelniający sam
+z siebie nie sprawia, że commity stają się Verified.
+
+Do lokalnej weryfikacji git musi wiedzieć, którym kluczom ufać:
+
+```bash
+printf 'ty@example.com namespaces="git" %s\n' "$(cut -d' ' -f1,2 ~/.ssh/id_ed25519_signing.pub)" \
+  > ~/.ssh/allowed_signers
+git config gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
+git log --show-signature -1
+git tag -v v1.0.0
+```
+
+## Podpisywanie instalatorów
+
 Paczki nie są podpisane, więc wydanie nie wymaga żadnych sekretów. Aby podpisać
 build macOS, usuń `identity: null` z `electron-builder.yml` i ustaw sekrety
 `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,

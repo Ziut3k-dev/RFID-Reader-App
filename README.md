@@ -201,7 +201,36 @@ the schedule).
 dev dependency but ships inside the packaged app, so its advisories affect end users — worth keeping
 current.
 
-### Code signing
+### Commit and tag signing
+
+Commits and tags are signed with an SSH key, so GitHub shows them as **Verified**. Two different
+things are called “signing” here — this is git signing (who authored the commit), separate from
+installer code signing below (who built the binary).
+
+To set it up on a fresh clone:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_signing -C "you@example.com (git signing)"
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/id_ed25519_signing.pub
+git config commit.gpgsign true
+git config tag.gpgsign true
+```
+
+Then add the **public** key to GitHub under *Settings → SSH and GPG keys → New SSH key* with key
+type **Signing Key** (an authentication key alone does not make commits Verified).
+
+To verify signatures locally, git needs to know which keys to trust:
+
+```bash
+printf 'you@example.com namespaces="git" %s\n' "$(cut -d' ' -f1,2 ~/.ssh/id_ed25519_signing.pub)" \
+  > ~/.ssh/allowed_signers
+git config gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
+git log --show-signature -1
+git tag -v v1.0.0
+```
+
+### Installer code signing
 
 Builds are unsigned, so no secrets are required to release. To sign macOS builds, remove
 `identity: null` from [`electron-builder.yml`](electron-builder.yml) and set `CSC_LINK`,
