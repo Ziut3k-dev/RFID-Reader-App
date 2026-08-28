@@ -101,3 +101,19 @@ test('walidacja profilu wyłapuje typowe pomyłki w konfiguracji', () => {
     operations: { ...base.operations, sites: { method: 'ZROB', path: '/s' } },
   }).some((p) => /nieprawidłową metodę/.test(p)));
 });
+
+test('nazwa pozycji może mieć pola zapasowe', () => {
+  const response = {
+    list: [
+      { id: 1, account_name: 'anna.k', first_name: 'Anna' },
+      { id: 2, account_name: '', first_name: 'Jan' },
+      { id: 3, account_name: '   ', first_name: '', email: 'x@example.com' },
+      { id: 4 },
+    ],
+  };
+  const items = mapList(response, {
+    listPath: 'list',
+    nameField: ['account_name', 'first_name', 'email'],
+  });
+  assert.deepEqual(items.map((i) => i.name), ['anna.k', 'Jan', 'x@example.com', '(bez nazwy 4)']);
+});

@@ -51,6 +51,18 @@ contextBridge.exposeInMainWorld('rfid', {
     return () => ipcRenderer.removeListener('bridge:scan', listener);
   },
 
+  akuvoxStatus: () => call('akuvox:status'),
+  akuvoxSave: (patch) => call('akuvox:save', patch),
+  akuvoxTest: () => call('akuvox:test'),
+  akuvoxSites: () => call('akuvox:sites'),
+  akuvoxApartments: (siteId) => call('akuvox:apartments', { siteId }),
+  akuvoxResidents: (siteId, apartmentId) => call('akuvox:residents', { siteId, apartmentId }),
+  akuvoxResidentCards: (target) => call('akuvox:resident-cards', target),
+  akuvoxAssign: (cardId, target) => call('akuvox:assign', { cardId, target }),
+  akuvoxUnassign: (cardId) => call('akuvox:unassign', { cardId }),
+  akuvoxRetry: () => call('akuvox:retry'),
+  akuvoxLog: () => call('akuvox:log'),
+
   exportCsv: (kind) => call('export:csv', { kind }),
   detectReaders: () => call('reader:detect'),
   appInfo: () => call('app:info'),

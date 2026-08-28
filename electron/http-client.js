@@ -63,6 +63,23 @@ export function redactBody(body) {
   return body;
 }
 
+/**
+ * Maskuje sekrety w treści typu application/x-www-form-urlencoded.
+ * Bez tego dziennik zapytań pokazywałby client_secret i hasło jawnym tekstem.
+ */
+export function redactForm(text) {
+  return String(text)
+    .split('&')
+    .map((pair) => {
+      const index = pair.indexOf('=');
+      if (index === -1) return pair;
+      const key = pair.slice(0, index);
+      const value = pair.slice(index + 1);
+      return `${key}=${isSecretField(decodeURIComponent(key)) ? mask(decodeURIComponent(value)) : value}`;
+    })
+    .join('&');
+}
+
 export class HttpError extends Error {
   constructor(message, { status, body, url } = {}) {
     super(message);
@@ -104,18 +121,22 @@ export class HttpClient {
 
   /**
    * @param {string} url
-   * @param {object} [opts] { method, headers, body, expectJson }
+   * @param {object} [opts] { method, headers, body, rawBody, expectJson }
+   *   body    — struktura wysyłana jako JSON
+   *   rawBody — gotowy tekst treści (np. formularz OAuth), wysyłany bez zmian
    * @returns {Promise<{status: number, data: any, text: string}>}
    */
-  async request(url, { method = 'GET', headers = {}, body, expectJson = true } = {}) {
+  async request(url, { method = 'GET', headers = {}, body, rawBody, expectJson = true } = {}) {
     const startedAt = new Date().toISOString();
-    const payload = body === undefined ? undefined : JSON.stringify(body);
+    const payload = rawBody !== undefined ? rawBody : (body === undefined ? undefined : JSON.stringify(body));
     const entry = {
       at: startedAt,
       method,
       url,
       headers: redactHeaders(headers),
-      body: redactBody(body),
+      // Treść formularza to jeden napis — maskujemy w nim wartości sekretów,
+      // bo tam właśnie lecą client_secret i hasło do punktu tokenu OAuth.
+      body: rawBody !== undefined ? redactForm(rawBody) : redactBody(body),
       dryRun: this.dryRun,
       attempts: 0,
       status: null,
@@ -142,7 +163,9 @@ export class HttpClient {
       try {
         const response = await fetch(url, {
           method,
-          headers: payload ? { 'Content-Type': 'application/json', ...headers } : headers,
+          headers: payload !== undefined && rawBody === undefined
+            ? { 'Content-Type': 'application/json', ...headers }
+            : headers,
           body: payload,
           signal: controller.signal,
           redirect: 'follow',

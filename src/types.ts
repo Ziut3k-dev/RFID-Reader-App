@@ -15,6 +15,108 @@ export interface Uid {
   source: 'dec' | 'hex' | 'wiegand';
 }
 
+/** Powiązanie karty z systemem zewnętrznym (chmura Akuvox). */
+export interface CardLink {
+  provider: string;
+  siteId: string;
+  siteName: string;
+  apartmentId: string;
+  apartmentName: string;
+  residentId: string;
+  residentName: string;
+  remoteId: string;
+  state: 'none' | 'pending' | 'synced' | 'error' | 'removing';
+  syncedAt: string;
+  error: string;
+}
+
+export interface AkuvoxRegion {
+  id: string;
+  name: string;
+  baseUrl: string;
+}
+
+export interface AkuvoxCardFormat {
+  id: string;
+  name: string;
+  hint: string;
+}
+
+export interface AkuvoxStatus {
+  enabled: boolean;
+  baseUrl: string;
+  region: string;
+  cardFormat: string;
+  clientId: string;
+  username: string;
+  dryRun: boolean;
+  hasClientSecret: boolean;
+  hasPassword: boolean;
+  secretStorageAvailable: boolean;
+  configured: boolean;
+  missing: string[];
+  regions: AkuvoxRegion[];
+  cardFormats: AkuvoxCardFormat[];
+  caveats: string[];
+  docs: string;
+  unsynced: number;
+}
+
+export interface AkuvoxSaveInput {
+  akuvoxEnabled?: boolean;
+  akuvoxRegion?: string;
+  akuvoxBaseUrl?: string;
+  akuvoxCardFormat?: string;
+  akuvoxClientId?: string;
+  akuvoxUsername?: string;
+  akuvoxDryRun?: boolean;
+  clientSecret?: string;
+  password?: string;
+}
+
+/** Pozycja listy z chmury (obiekt, mieszkanie, mieszkaniec). */
+export interface RemoteItem {
+  id: string;
+  name: string;
+  extra?: string;
+}
+
+export interface AkuvoxTestResult {
+  ok: boolean;
+  steps: { step: string; ok: boolean; detail: string }[];
+  sites?: RemoteItem[];
+}
+
+export interface AkuvoxTarget {
+  siteId: string;
+  siteName?: string;
+  apartmentId: string;
+  apartmentName?: string;
+  residentId: string;
+  residentName?: string;
+}
+
+export interface AkuvoxAssignResult {
+  ok: boolean;
+  card?: Card;
+  cardNumber?: string;
+  remoteId?: string;
+  error?: string;
+}
+
+export interface RequestLogEntry {
+  at: string;
+  method: string;
+  url: string;
+  status: number | null;
+  ms: number;
+  attempts: number;
+  dryRun: boolean;
+  error: string | null;
+  body?: unknown;
+  response?: unknown;
+}
+
 export interface Card {
   id: number;
   uidHex: string;
@@ -27,6 +129,7 @@ export interface Card {
   validFrom: string | null;
   validTo: string | null;
   note: string;
+  link: CardLink;
   createdAt: string;
   updatedAt: string;
   scanCount?: number;
@@ -177,5 +280,17 @@ export interface RfidApi {
   /** Subskrypcja odczytów z telefonu; zwraca funkcję odsubskrybowania. */
   onPhoneScan(callback: (result: ScanResult) => void): () => void;
   detectReaders(): Promise<ReaderInfo>;
+
+  akuvoxStatus(): Promise<AkuvoxStatus>;
+  akuvoxSave(patch: AkuvoxSaveInput): Promise<AkuvoxStatus>;
+  akuvoxTest(): Promise<AkuvoxTestResult>;
+  akuvoxSites(): Promise<RemoteItem[]>;
+  akuvoxApartments(siteId: string): Promise<RemoteItem[]>;
+  akuvoxResidents(siteId: string, apartmentId?: string): Promise<RemoteItem[]>;
+  akuvoxResidentCards(target: AkuvoxTarget): Promise<RemoteItem[]>;
+  akuvoxAssign(cardId: number, target: AkuvoxTarget): Promise<AkuvoxAssignResult>;
+  akuvoxUnassign(cardId: number): Promise<{ ok: boolean; localOnly?: boolean; message?: string; error?: string }>;
+  akuvoxRetry(): Promise<{ total: number; ok: number }>;
+  akuvoxLog(): Promise<RequestLogEntry[]>;
   appInfo(): Promise<AppInfo>;
 }

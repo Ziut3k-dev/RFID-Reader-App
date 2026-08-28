@@ -73,9 +73,23 @@ export function mapList(response, mapping = {}) {
       (raw === undefined ? ' — sprawdź listPath w profilu' : ` (jest ${typeof raw})`),
     );
   }
+  // nameField może być listą — bierzemy pierwsze niepuste pole. API zwracają
+  // różne warianty (account_name bywa puste, a first_name nie), a lista
+  // z podpisem „(bez nazwy 3)” jest bezużyteczna przy wyborze mieszkańca.
+  const nameFields = Array.isArray(mapping.nameField)
+    ? mapping.nameField
+    : [mapping.nameField ?? 'name'];
+
   return raw.map((item, index) => {
     const id = pickPath(item, mapping.idField ?? 'id');
-    const name = pickPath(item, mapping.nameField ?? 'name');
+    let name;
+    for (const field of nameFields) {
+      const value = pickPath(item, field);
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        name = value;
+        break;
+      }
+    }
     return {
       id: id === undefined || id === null ? '' : String(id),
       // Bez nazwy lista byłaby nie do użycia w oknie wyboru, więc dajemy

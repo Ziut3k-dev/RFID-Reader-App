@@ -10,7 +10,7 @@
 
 import { Store } from '../shared/store.js';
 import { ScanService } from '../shared/service.js';
-import type { AppInfo, BridgeStatus, Card, CardInput, Inspection, ReaderInfo, RfidApi, ScanQuery, ScanResult, Settings, Stats } from './types';
+import type { AkuvoxStatus, AppInfo, BridgeStatus, Card, CardInput, Inspection, ReaderInfo, RfidApi, ScanQuery, ScanResult, Settings, Stats } from './types';
 
 const STORAGE_KEY = 'rfid-scanner-data';
 
@@ -45,6 +45,30 @@ function webBridgeStatus(): BridgeStatus {
     error: 'Serwer telefonu wymaga aplikacji Electron — w podglądzie przeglądarkowym nie działa.',
     addresses: [],
     urls: [],
+  };
+}
+
+const BEZ_ELECTRONA = 'Integracja z chmurą działa tylko w aplikacji — podgląd w przeglądarce nie ma procesu głównego.';
+
+function webAkuvoxStatus(): AkuvoxStatus {
+  return {
+    enabled: false,
+    baseUrl: '',
+    region: '',
+    cardFormat: 'dec',
+    clientId: '',
+    username: '',
+    dryRun: false,
+    hasClientSecret: false,
+    hasPassword: false,
+    secretStorageAvailable: false,
+    configured: false,
+    missing: [BEZ_ELECTRONA],
+    regions: [],
+    cardFormats: [],
+    caveats: [BEZ_ELECTRONA],
+    docs: 'https://developer.akubela.com',
+    unsynced: 0,
   };
 }
 
@@ -84,6 +108,18 @@ function createWebApi(): RfidApi {
     bridgeRestart: async () => webBridgeStatus(),
     bridgeRegenerateToken: async () => webBridgeStatus(),
     onPhoneScan: () => () => {},
+
+    akuvoxStatus: async () => webAkuvoxStatus(),
+    akuvoxSave: async () => webAkuvoxStatus(),
+    akuvoxTest: async () => ({ ok: false, steps: [{ step: 'środowisko', ok: false, detail: BEZ_ELECTRONA }] }),
+    akuvoxSites: async () => [],
+    akuvoxApartments: async () => [],
+    akuvoxResidents: async () => [],
+    akuvoxResidentCards: async () => [],
+    akuvoxAssign: async () => ({ ok: false, error: BEZ_ELECTRONA }),
+    akuvoxUnassign: async () => ({ ok: false, error: BEZ_ELECTRONA }),
+    akuvoxRetry: async () => ({ total: 0, ok: 0 }),
+    akuvoxLog: async () => [],
 
     detectReaders: async (): Promise<ReaderInfo> => ({
       supported: false,

@@ -30,8 +30,17 @@ Fixes land on `master` and go out in the next tagged release.
 
 Worth knowing before you assess a finding — several properties are deliberate:
 
-* **No outbound network access.** The app makes no HTTP requests, has no telemetry, no accounts and
-  no auto-update. Packaged builds run with a Content Security Policy restricted to `'self'`.
+* **No telemetry, no accounts, no auto-update.** Packaged builds run with a Content Security Policy
+  restricted to `'self'`, and the renderer never talks to the network directly.
+* **One optional outbound integration.** The Akuvox cloud integration is **off until configured** and
+  only talks to the API address you enter. When enabled:
+  * API credentials are encrypted at rest with the OS keystore (`safeStorage`: Keychain / DPAPI /
+    libsecret) in a separate file — never in the plain-JSON card database,
+  * the access token lives in process memory only and is never written to disk,
+  * the request log shown in the app masks secrets in headers, JSON bodies and form bodies,
+  * a dry-run mode shows what would be sent without sending it,
+  * plain `http://` outside the local network is rejected by profile validation, so credentials
+    cannot be sent unencrypted by a configuration slip.
 * **One optional inbound listener.** The *phone as scanner* feature starts a local HTTP server on the
   LAN (default port 8787). It is **off by default** and must be enabled per session. When enabled:
   * every request needs the secret from the pairing URL (32 random hex characters, compared in

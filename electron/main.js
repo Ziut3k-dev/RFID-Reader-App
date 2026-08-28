@@ -11,6 +11,11 @@ import { ScanService } from '../shared/service.js';
 import { detectReaders } from './reader.js';
 import { fileAdapter } from './persistence.js';
 import { PhoneBridge } from './bridge.js';
+import { SecretStore } from './secrets.js';
+import { RestAdapter } from './rest-adapter.js';
+import { HttpClient } from './http-client.js';
+import { IntegrationService } from '../shared/integration.js';
+import { AKUVOX_CAVEATS, AKUVOX_PROFILE, AKUVOX_REGIONS, CARD_FORMATS } from '../shared/akuvox-profile.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -25,6 +30,9 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 let store;
 let service;
 let bridge;
+let secrets;
+let integration;
+let integrationHttp;
 let mainWindow = null;
 
 function dataFile() {
@@ -33,6 +41,70 @@ function dataFile() {
     return path.join(app.getAppPath(), 'data', 'rfid-data.json');
   }
   return path.join(app.getPath('userData'), 'rfid-data.json');
+}
+
+/**
+ * Adapter chmury budowany na bieżąco z ustawień i sekretów.
+ *
+ * Tworzony przy każdym wywołaniu, ale token żyje w instancji — dlatego
+ * trzymamy jedną i przebudowujemy ją tylko po zmianie konfiguracji.
+ * Inaczej każda operacja logowałaby się od nowa.
+ */
+let adapterCache = null;
+let adapterKey = '';
+
+function akuvoxAdapter() {
+  const s = store.getSettings();
+  const profile = {
+    ...AKUVOX_PROFILE,
+    providerId: 'akuvox',
+    baseUrl: s.akuvoxBaseUrl || AKUVOX_PROFILE.baseUrl,
+    cardFormat: s.akuvoxCardFormat,
+  };
+  const credentials = {
+    clientId: s.akuvoxClientId,
+    clientSecret: secrets.get('akuvoxClientSecret'),
+    username: s.akuvoxUsername,
+    password: secrets.get('akuvoxPassword'),
+  };
+  // Zmiana czegokolwiek istotnego unieważnia token — stąd klucz z konfiguracji.
+  const key = JSON.stringify([profile.baseUrl, profile.cardFormat, credentials.clientId, credentials.username, Boolean(credentials.clientSecret), Boolean(credentials.password), s.akuvoxDryRun]);
+  if (adapterCache && adapterKey === key) return adapterCache;
+
+  integrationHttp = new HttpClient({ retries: 2, timeoutMs: 15_000, dryRun: s.akuvoxDryRun, logSize: 60 });
+  adapterCache = new RestAdapter({ profile, credentials, http: integrationHttp });
+  adapterKey = key;
+  return adapterCache;
+}
+
+function akuvoxStatus() {
+  const s = store.getSettings();
+  const missing = [];
+  if (!s.akuvoxBaseUrl) missing.push('adres serwera');
+  if (!s.akuvoxClientId) missing.push('client_id');
+  if (!secrets.has('akuvoxClientSecret')) missing.push('client_secret');
+  if (!s.akuvoxUsername) missing.push('login zarządcy');
+  if (!secrets.has('akuvoxPassword')) missing.push('hasło zarządcy');
+
+  return {
+    enabled: s.akuvoxEnabled,
+    baseUrl: s.akuvoxBaseUrl,
+    region: s.akuvoxRegion,
+    cardFormat: s.akuvoxCardFormat,
+    clientId: s.akuvoxClientId,
+    username: s.akuvoxUsername,
+    dryRun: s.akuvoxDryRun,
+    hasClientSecret: secrets.has('akuvoxClientSecret'),
+    hasPassword: secrets.has('akuvoxPassword'),
+    secretStorageAvailable: secrets.available,
+    configured: missing.length === 0,
+    missing,
+    regions: AKUVOX_REGIONS,
+    cardFormats: CARD_FORMATS,
+    caveats: AKUVOX_CAVEATS,
+    docs: AKUVOX_PROFILE.docs,
+    unsynced: store.listUnsyncedCards().length,
+  };
 }
 
 function distDir() {
@@ -195,6 +267,27 @@ function registerIpc() {
     return true;
   });
 
+  // --- integracja z chmurą Akuvox -----------------------------------------
+  handle('akuvox:status', () => akuvoxStatus());
+  handle('akuvox:save', (patch = {}) => {
+    const { clientSecret, password, ...rest } = patch;
+    // Sekrety idą do magazynu szyfrowanego systemowo, nie do pliku z kartami.
+    if (clientSecret !== undefined) secrets.set('akuvoxClientSecret', clientSecret);
+    if (password !== undefined) secrets.set('akuvoxPassword', password);
+    store.setSettings(rest);
+    adapterCache = null;
+    return akuvoxStatus();
+  });
+  handle('akuvox:test', () => integration.test());
+  handle('akuvox:sites', () => integration.sites());
+  handle('akuvox:apartments', ({ siteId }) => integration.apartments(siteId));
+  handle('akuvox:residents', ({ siteId, apartmentId }) => integration.residents(siteId, apartmentId));
+  handle('akuvox:resident-cards', (target) => integration.residentCards(target));
+  handle('akuvox:assign', ({ cardId, target }) => integration.assign(cardId, target));
+  handle('akuvox:unassign', ({ cardId }) => integration.unassign(cardId));
+  handle('akuvox:retry', () => integration.retryPending());
+  handle('akuvox:log', () => (integrationHttp ? integrationHttp.recentLog() : []));
+
   handle('stats:get', () => store.stats());
   handle('settings:get', () => store.getSettings());
   handle('settings:set', (patch) => store.setSettings(patch || {}));
@@ -246,6 +339,8 @@ if (!app.requestSingleInstanceLock()) {
     applyContentSecurityPolicy();
     store = new Store(fileAdapter(dataFile()));
     service = new ScanService(store);
+    secrets = new SecretStore(path.join(path.dirname(dataFile()), 'rfid-secrets.bin'));
+    integration = new IntegrationService({ store, adapter: () => akuvoxAdapter() });
     bridge = new PhoneBridge({
       store,
       service,

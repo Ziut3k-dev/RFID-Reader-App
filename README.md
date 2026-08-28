@@ -49,8 +49,10 @@ Practical consequences:
 * **Access rules** — block flag, validity window, repeat-scan suppression, station name per reading.
 * **Phone as a second entry point** — the app can serve a small page on your LAN and show a QR code
   to pair a phone; card numbers typed there land in the same pipeline as the USB reader.
-* **Offline by design** — no outbound network calls, no telemetry, no accounts. Data stays in one
-  local file, and the optional phone server is off by default.
+* **Akuvox cloud integration** — assign a scanned card to a resident in an object (building) through
+  the akubela OpenAPI, with connection test, dry-run mode and a redacted request log.
+* **Local by default** — no telemetry, no accounts. Data stays in one local file; the phone server
+  and the cloud integration are both off until you turn them on.
 
 ## 🛠️ Tech stack
 
@@ -62,6 +64,7 @@ Practical consequences:
 | Storage | Single JSON file, written atomically (temp file + `rename`) |
 | Hardware | USB HID keyboard events (no native modules, no `pip`/`node-gyp` build step) |
 | Phone bridge | Node's built-in `http` server + a second Vite entry point for the phone page (2.8 kB) |
+| Cloud integration | `fetch` + a data-driven REST profile; secrets in the OS keystore (`safeStorage`) |
 | Packaging | electron-builder 26 → dmg/zip, NSIS/portable, AppImage/deb/tar.gz |
 
 **Zero production dependencies.** `npm install` pulls dev tooling only, so there is nothing to
@@ -136,6 +139,41 @@ registers the scan directly, without opening the page.
 pairing URL. Anyone who photographs the QR code can register scans, so regenerate the secret (one
 button) or stop the server when you're done, and keep it on a trusted network — the connection is not
 encrypted. See [SECURITY.md](SECURITY.md) for the full picture.
+
+## ☁️ Akuvox cloud integration
+
+Assigns a card read by the USB reader to a resident in the Akuvox cloud, under the **Akuvox** tab.
+
+The API is **akubela OpenAPI** ([developer.akubela.com](https://developer.akubela.com)) — Akuvox's
+documented cloud interface. Two things shaped the implementation:
+
+* It is **command-style, not REST**: one URL (`…/method/manager-commands`) and the operation goes in
+  the JSON body as `{"command": …, "id": <32 hex>, "param": {…}}`. Responses are always
+  `{"success": bool, "timestamp": int, "result": …}` — a logical failure arrives with HTTP 200, so
+  the envelope is checked on every call.
+* The hierarchy is `project → building → residence (“family”) → account → rf_card`. The “object”
+  is a **project**, an apartment is a **residence** (`residence_no` is the human-visible number),
+  and a resident is an **account**.
+
+Getting access: the documentation is public, the credentials are not. `client_id` / `client_secret`
+come from akubela technical support (support@akubela.com), and the documentation requires you to
+develop against a test server (`api.*.pre.akubela.com`) before moving to production. Pick your region
+in the panel — an account belongs to one cloud (EU / US / Asia / Japan / Australia / China).
+
+How it works: the card assignment is written locally as `pending` first, then sent. On success the
+card is marked `synced` with the cloud's `rf_card_id`; on failure it stays with the reason attached
+and can be retried. Nothing silently succeeds.
+
+**Not settled by the documentation** (surfaced in the panel, so it isn't a hidden assumption):
+the exact format of the card `number` field — the docs only give type String and the example
+`"1234567"`. The panel lets you pick decimal, zero-padded decimal, hex or byte-reversed hex; after
+the first assignment, check the number in the Akuvox panel and adjust. Also unverified: whether a card
+starts working on devices immediately or needs an access-group assignment, and whether projects held
+in the older SmartPlus cloud are visible through this API.
+
+Credentials are encrypted with the OS keystore and stored outside the card database. The access token
+lives in memory only. The request log masks secrets, and dry-run mode shows the exact request without
+sending it — useful when tuning the card format against a real tenant.
 
 ## 🔐 Access rules
 

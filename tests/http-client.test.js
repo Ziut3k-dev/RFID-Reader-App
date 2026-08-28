@@ -115,3 +115,35 @@ test('dziennik ma ograniczony rozmiar', async () => {
   assert.match(client.recentLog()[0].url, /\/5$/, 'najnowsze zapytanie na początku');
   await s.close();
 });
+
+test('treść formularza leci bez zmian, a sekrety w niej są maskowane w dzienniku', async () => {
+  let seen = null;
+  const s = await server((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      seen = { body, contentType: req.headers['content-type'] };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"success":true,"result":{"access_token":"tajny-token"}}');
+    });
+  });
+
+  const client = new HttpClient({ retries: 0 });
+  const form = 'grant_type=password&client_id=abc&client_secret=bardzo-tajne&username=jan&password=haslo123456';
+  const { data } = await client.request(s.url('/oauth2/token'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    rawBody: form,
+  });
+
+  assert.equal(data.result.access_token, 'tajny-token');
+  assert.equal(seen.body, form, 'treść formularza nie może być przepakowana do JSON');
+  assert.equal(seen.contentType, 'application/x-www-form-urlencoded');
+
+  const logged = client.recentLog()[0].body;
+  assert.match(logged, /grant_type=password/);
+  assert.equal(logged.includes('bardzo-tajne'), false, 'client_secret nie może trafić do dziennika');
+  assert.equal(logged.includes('haslo123456'), false, 'hasło nie może trafić do dziennika');
+  assert.match(logged, /client_id=/);
+  await s.close();
+});

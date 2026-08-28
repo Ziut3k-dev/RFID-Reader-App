@@ -349,3 +349,25 @@ details summary { cursor: pointer; font-size: 12px; color: var(--text-mute); mar
 .pairing__url { margin-top: 14px; padding: 9px 12px; background: var(--bg); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); }
 .pairing__url code { font-size: 11.5px; color: var(--text-dim); word-break: break-all; }
 .card__lead code, .card__note code { padding: 1px 5px; background: var(--bg); border-radius: 4px; font-size: 11.5px; color: var(--text-dim); }
+
+/* --- integracja z chmurą -------------------------------------------------- */
+
+.page__section { font-size: 13px; margin: 22px 0 10px; color: var(--text-dim); }
+
+.steps { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+.steps li { padding: 8px 10px; border-radius: var(--radius-sm); border-left: 2px solid var(--line); background: var(--bg); }
+.steps__ok { border-left-color: var(--ok); }
+.steps__bad { border-left-color: var(--bad); color: var(--bad); }
+.steps strong { color: var(--text); font-weight: 600; }
+
+.caveats { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; font-size: 12px; color: var(--text-mute); line-height: 1.5; }
+
+.modal__box--wide { width: min(860px, 100%); }
+.logentry { border: 1px solid var(--line-soft); border-radius: var(--radius-sm); margin-bottom: 6px; background: var(--bg); }
+.logentry summary { cursor: pointer; padding: 8px 10px; font-size: 12.5px; }
+.logentry summary code { color: var(--accent); }
+.logentry__body { padding: 0 10px 10px; }
+.logentry__body pre {
+  margin: 8px 0 0; padding: 10px; background: var(--bg-3); border-radius: 6px;
+  font-size: 11px; line-height: 1.5; overflow-x: auto; max-height: 320px; color: var(--text-dim);
+}

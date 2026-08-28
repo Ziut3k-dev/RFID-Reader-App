@@ -26,6 +26,17 @@ export const DEFAULT_SETTINGS = {
   bridgePort: 8787,
   /** Sekret w adresie sparowania; puste = wygeneruj przy pierwszym starcie */
   bridgeToken: '',
+
+  /** Integracja z chmurą Akuvox (akubela OpenAPI) */
+  akuvoxEnabled: false,
+  akuvoxRegion: 'ecloud-pre',
+  akuvoxBaseUrl: 'https://api.ecloud.pre.akubela.com',
+  /** Postać numeru karty wysyłana do chmury: dec | dec10 | hex | hexReversed */
+  akuvoxCardFormat: 'dec',
+  akuvoxClientId: '',
+  akuvoxUsername: '',
+  /** Tryb podglądu: pokazuj zapytania, nie wysyłaj ich */
+  akuvoxDryRun: false,
 };
 
 /**
@@ -128,6 +139,16 @@ export class Store {
     next.bridgeToken = /^[0-9a-f]{0,64}$/.test(String(next.bridgeToken || ''))
       ? String(next.bridgeToken || '')
       : '';
+
+    next.akuvoxEnabled = Boolean(next.akuvoxEnabled);
+    next.akuvoxDryRun = Boolean(next.akuvoxDryRun);
+    next.akuvoxRegion = String(next.akuvoxRegion || DEFAULT_SETTINGS.akuvoxRegion).slice(0, 40);
+    next.akuvoxBaseUrl = String(next.akuvoxBaseUrl || '').trim().replace(/\/+$/, '');
+    if (!['dec', 'dec10', 'hex', 'hexReversed'].includes(next.akuvoxCardFormat)) {
+      next.akuvoxCardFormat = DEFAULT_SETTINGS.akuvoxCardFormat;
+    }
+    next.akuvoxClientId = String(next.akuvoxClientId || '').trim().slice(0, 200);
+    next.akuvoxUsername = String(next.akuvoxUsername || '').trim().slice(0, 200);
     this.data.settings = next;
     this.save();
     return this.getSettings();

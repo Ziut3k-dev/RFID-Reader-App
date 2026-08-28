@@ -80,6 +80,9 @@ tekstowe), stronicowaniem i eksportem CSV.
 **Telefon** — serwer w sieci lokalnej i kod QR do sparowania telefonu jako
 dodatkowego wejścia dla numerów kart (opis niżej).
 
+**Akuvox** — połączenie z chmurą i przypisywanie kart mieszkańcom w obiektach
+(opis niżej).
+
 **Ustawienia** — tryb interpretacji numeru, reguła dla nieznanej karty
 (odmowa / tryb nauki), nazwa stanowiska, okno blokady powtórnego odczytu, limit
 historii, dźwięk, wykrywanie czytnika na liście USB i diagnostyka odczytu.
@@ -113,6 +116,51 @@ zapytanie wymaga sekretu z adresu sparowania. Kto zrobi zdjęcie kodu QR, może
 rejestrować odczyty — dlatego warto wygenerować nowy sekret (jeden przycisk)
 albo zatrzymać serwer po pracy. Połączenie nie jest szyfrowane, więc trzymaj je
 w zaufanej sieci. Szczegóły w [SECURITY.md](../SECURITY.md).
+
+## Integracja z chmurą Akuvox
+
+Przypisuje kartę odczytaną z czytnika USB mieszkańcowi w chmurze Akuvox —
+zakładka **Akuvox**.
+
+API nazywa się **akubela OpenAPI** ([developer.akubela.com](https://developer.akubela.com)) i to
+ono jest udokumentowanym interfejsem chmury Akuvoxa. Dwie jego cechy ukształtowały
+implementację:
+
+* Nie jest to REST, a **styl komend**: jeden adres (`…/method/manager-commands`),
+  a operacja siedzi w treści JSON jako `{"command": …, "id": <32 znaki HEX>,
+  "param": {…}}`. Odpowiedź ma zawsze kształt `{"success": bool, "timestamp":
+  int, "result": …}` — błąd logiczny przychodzi z kodem HTTP 200, więc kopertę
+  sprawdzamy przy każdym wywołaniu.
+* Hierarchia to `project → building → residence („family”) → account →
+  rf_card`. „Obiekt” z Twojego pytania to **project**, mieszkanie to
+  **residence** (`residence_no` to numer widoczny dla człowieka), a mieszkaniec
+  to **account**.
+
+Jak zdobyć dostęp: dokumentacja jest publiczna, poświadczenia nie.
+`client_id` / `client_secret` wydaje pomoc techniczna akubela
+(support@akubela.com), a dokumentacja wymaga prowadzenia integracji najpierw na
+serwerze testowym (`api.*.pre.akubela.com`). Region wybiera się w panelu —
+konto należy do jednej chmury (Europa / Ameryka / Azja / Japonia / Australia /
+Chiny).
+
+Jak to działa: przypisanie zapisujemy najpierw lokalnie ze stanem `pending`,
+potem wysyłamy. Po sukcesie karta ma stan `synced` i identyfikator `rf_card_id`
+z chmury; po niepowodzeniu zostaje z zapisanym powodem i da się ponowić.
+Nic nie udaje sukcesu.
+
+**Czego dokumentacja nie rozstrzyga** (pokazane w panelu, żeby nie było to
+ukrytym założeniem): dokładny format pola `number` — dokumentacja podaje tylko
+typ tekstowy i przykład `"1234567"`. W panelu wybierasz postać dziesiętną,
+dziesiętną z zerami, HEX albo HEX z odwróconymi bajtami; po pierwszym
+przypisaniu sprawdź numer w panelu Akuvox i w razie potrzeby zmień. Niepewne
+jest też, czy karta zaczyna działać na urządzeniach od razu, czy trzeba jeszcze
+przypisać mieszkańca do grupy dostępu, oraz czy projekty prowadzone w starszej
+chmurze SmartPlus są widoczne przez to API.
+
+Poświadczenia są szyfrowane magazynem systemowym i leżą poza bazą kart. Token
+żyje tylko w pamięci procesu. Dziennik zapytań maskuje sekrety, a tryb podglądu
+pokazuje dokładne zapytanie bez wysyłania go — przydaje się przy dostrajaniu
+formatu numeru karty do konkretnego wdrożenia.
 
 ## Reguły dostępu
 
