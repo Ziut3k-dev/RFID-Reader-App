@@ -52,23 +52,19 @@ const BEZ_ELECTRONA = 'Integracja z chmurą działa tylko w aplikacji — podgl�
 
 function webAkuvoxStatus(): AkuvoxStatus {
   return {
-    enabled: false,
-    baseUrl: '',
-    region: '',
-    cardFormat: 'dec',
-    clientId: '',
-    username: '',
-    dryRun: false,
-    hasClientSecret: false,
-    hasPassword: false,
+    connections: [],
+    activeId: '',
+    active: null,
+    installerName: '',
+    offlineQueue: false,
+    autoSync: false,
     secretStorageAvailable: false,
-    configured: false,
-    missing: [BEZ_ELECTRONA],
     regions: [],
     cardFormats: [],
     caveats: [BEZ_ELECTRONA],
     docs: 'https://developer.akubela.com',
     unsynced: 0,
+    lastSync: null,
   };
 }
 
@@ -110,8 +106,16 @@ function createWebApi(): RfidApi {
     onPhoneScan: () => () => {},
 
     akuvoxStatus: async () => webAkuvoxStatus(),
-    akuvoxSave: async () => webAkuvoxStatus(),
+    akuvoxSaveConnection: async () => webAkuvoxStatus(),
+    akuvoxDeleteConnection: async () => ({ removed: false, unlinkedCards: 0, status: webAkuvoxStatus() }),
+    akuvoxActivateConnection: async () => webAkuvoxStatus(),
+    akuvoxSaveOptions: async () => webAkuvoxStatus(),
     akuvoxTest: async () => ({ ok: false, steps: [{ step: 'środowisko', ok: false, detail: BEZ_ELECTRONA }] }),
+    akuvoxCheck: async () => [],
+    akuvoxVerify: async () => ({ verified: false, error: BEZ_ELECTRONA }),
+    akuvoxReplace: async () => ({ ok: false, stage: 'środowisko', error: BEZ_ELECTRONA }),
+    akuvoxHandover: async () => ({ ok: false, empty: true }),
+    onAkuvoxSync: () => () => {},
     akuvoxSites: async () => [],
     akuvoxApartments: async () => [],
     akuvoxResidents: async () => [],

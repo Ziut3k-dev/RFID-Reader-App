@@ -148,6 +148,19 @@ potem wysyłamy. Po sukcesie karta ma stan `synced` i identyfikator `rf_card_id`
 z chmury; po niepowodzeniu zostaje z zapisanym powodem i da się ponowić.
 Nic nie udaje sukcesu.
 
+### Pod pracę instalatora
+
+| Funkcja | Co daje na obiekcie |
+| --- | --- |
+| **Wiele połączeń** | Jedno na klienta, każde z własnymi poświadczeniami, przełączane jednym kliknięciem. Usunięcie połączenia odwiązuje jego karty, ale zostawia same karty i historię odczytów. |
+| **Tryb seryjny** | Wybierasz obiekt i zbliżasz karty jedna po drugiej — każda trafia do zaznaczonego mieszkańca, lista przechodzi dalej. Karta nieznana zostaje dopisana automatycznie, z nazwą od mieszkania i mieszkańca. |
+| **Kolejka offline** | W piwnicy bez zasięgu każda próba wysyłki to kilkanaście sekund na limit czasu. Przypisania zbierają się lokalnie i lecą później. |
+| **Automatyczne dosyłanie** | Gdy wróci łączność, zaległe idą same (sprawdzanie raz na minutę) i dostajesz powiadomienie. |
+| **Potwierdzenie odczytem** | Po udanym zapisie odczytujemy poświadczenia mieszkańca. Chmura odpowiadająca „ok” to nie to samo co karta widoczna u mieszkańca — stan *potwierdzona* pojawia się dopiero, gdy karta tam jest. |
+| **Ostrzeżenia o duplikatach** | Przed przypisaniem: ta karta jest już wydana, ten mieszkaniec ma już kartę, ten numer jest już w chmurze. Ostrzegają, nie blokują — druga karta do mieszkania bywa celowa. |
+| **Wymiana zgubionej karty** | Jedno działanie: odebranie starej w chmurze, zablokowanie jej lokalnie (żeby znalazca dostał odmowę, a nie brak wpisu) i wydanie nowej temu samemu mieszkańcowi z zapisanym powodem. |
+| **Protokół przekazania** | CSV albo PDF do podpisu, per obiekt: mieszkanie, mieszkaniec, karta, UID, numer, stan, kto wydał, data, uwagi — z miejscami na podpisy. PDF składa Chromium wbudowany w Electrona, bez dodatkowej biblioteki. |
+
 **Czego dokumentacja nie rozstrzyga** (pokazane w panelu, żeby nie było to
 ukrytym założeniem): dokładny format pola `number` — dokumentacja podaje tylko
 typ tekstowy i przykład `"1234567"`. W panelu wybierasz postać dziesiętną,

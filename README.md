@@ -164,6 +164,19 @@ How it works: the card assignment is written locally as `pending` first, then se
 card is marked `synced` with the cloud's `rf_card_id`; on failure it stays with the reason attached
 and can be retried. Nothing silently succeeds.
 
+### Built for installer work
+
+| Feature | Why it matters on site |
+| --- | --- |
+| **Several connections** | One per customer, each with its own credentials; switch with a radio button. Deleting a connection unlinks its cards but keeps the cards and the scan history. |
+| **Series mode** | Pick the object, then just tap card after card — each goes to the highlighted resident and the list advances. Unknown cards are added to the database automatically, named after the apartment and resident. |
+| **Offline queue** | In a basement with no signal, every send would burn a timeout. Assignments are collected locally and sent later. |
+| **Auto-resend** | When connectivity returns, queued assignments go out on their own (checked every minute) and you get a notification. |
+| **Read-back confirmation** | After a successful write, the resident's credentials are re-read. A cloud answering “success” is not the same as the card being visible to the resident — the card is marked *confirmed* only after it is seen. |
+| **Duplicate warnings** | Before assigning: this card is already assigned, this resident already has a card, or this number already exists in the cloud. Warnings, not blocks — sometimes a second card is intentional. |
+| **Replace a lost card** | One action: revoke the old card in the cloud, block it locally (so a finder gets a refusal, not a blank), issue the new one to the same resident with the reason recorded. |
+| **Handover protocol** | CSV or a printable PDF per object: apartment, resident, card, UID, number, state, who issued it, date, notes — with signature lines. PDF is rendered by Electron's own `printToPDF`, no extra dependency. |
+
 **Not settled by the documentation** (surfaced in the panel, so it isn't a hidden assumption):
 the exact format of the card `number` field — the docs only give type String and the example
 `"1234567"`. The panel lets you pick decimal, zero-padded decimal, hex or byte-reversed hex; after

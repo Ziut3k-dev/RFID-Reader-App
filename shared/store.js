@@ -37,6 +37,17 @@ export const DEFAULT_SETTINGS = {
   akuvoxUsername: '',
   /** Tryb podglądu: pokazuj zapytania, nie wysyłaj ich */
   akuvoxDryRun: false,
+
+  /** Kto wydaje karty — podpis w protokole przekazania */
+  installerName: '',
+  /**
+   * Tryb offline: przypisania odkładamy do kolejki i nie próbujemy wysyłać.
+   * Na budowie bez zasięgu każda próba to kilkanaście sekund czekania na limit
+   * czasu — lepiej zebrać wszystko i wysłać raz.
+   */
+  offlineQueue: false,
+  /** Automatyczne dosyłanie zaległych, gdy wróci łączność */
+  autoSync: true,
 };
 
 /**
@@ -47,6 +58,7 @@ export const DEFAULT_SETTINGS = {
  */
 export const EMPTY_LINK = {
   provider: '',        // '' = karta nie jest nigdzie przypisana
+  connectionId: '',    // które połączenie (klient/chmura) — instalator ma ich wiele
   siteId: '',
   siteName: '',
   apartmentId: '',
@@ -57,9 +69,40 @@ export const EMPTY_LINK = {
   state: 'none',       // none | pending | synced | error | removing
   syncedAt: '',
   error: '',
+  /** Potwierdzenie odczytem: chmura odpowiedziała „ok”, ale czy karta tam jest */
+  verified: false,
+  verifiedAt: '',
+  /** Kto wydał kartę — trafia do protokołu przekazania */
+  assignedBy: '',
+  /** Wymiana zgubionej karty: id poprzedniej karty i powód */
+  replacesCardId: 0,
+  replacementReason: '',
 };
 
-const EMPTY = { version: 1, settings: { ...DEFAULT_SETTINGS }, cards: [], scans: [], nextCardId: 1, nextScanId: 1 };
+/** Połączenie z chmurą jednego klienta. Instalator obsługuje kilka obiektów. */
+export const EMPTY_CONNECTION = {
+  id: '',
+  name: '',
+  provider: 'akuvox',
+  region: 'ecloud-pre',
+  baseUrl: 'https://api.ecloud.pre.akubela.com',
+  clientId: '',
+  username: '',
+  cardFormat: 'dec',
+  dryRun: false,
+  createdAt: '',
+};
+
+const EMPTY = {
+  version: 2,
+  settings: { ...DEFAULT_SETTINGS },
+  cards: [],
+  scans: [],
+  connections: [],
+  activeConnectionId: '',
+  nextCardId: 1,
+  nextScanId: 1,
+};
 
 export class Store {
   /** @param {{read: () => string|null, write: (text: string) => void, label?: string, quarantine?: () => void}} adapter */
@@ -69,6 +112,38 @@ export class Store {
     this.data = structuredClone(EMPTY);
     this._writeTimer = null;
     this.load();
+  }
+
+  /**
+   * Przenosi jedną konfigurację z ustawień na listę połączeń. Instalator
+   * dostaje kilka klientów, a wcześniejsze wersje miały tylko jedną chmurę —
+   * bez tego jego dotychczasowe ustawienia po prostu by zniknęły z widoku.
+   */
+  #migrateConnections() {
+    if (this.data.connections?.length) return;
+    const s = this.data.settings || {};
+    if (!s.akuvoxClientId && !s.akuvoxBaseUrl) return;
+
+    const id = 'conn-1';
+    this.data.connections = [{
+      ...EMPTY_CONNECTION,
+      id,
+      name: 'Połączenie z poprzedniej wersji',
+      region: s.akuvoxRegion || EMPTY_CONNECTION.region,
+      baseUrl: s.akuvoxBaseUrl || EMPTY_CONNECTION.baseUrl,
+      clientId: s.akuvoxClientId || '',
+      username: s.akuvoxUsername || '',
+      cardFormat: s.akuvoxCardFormat || 'dec',
+      dryRun: Boolean(s.akuvoxDryRun),
+      createdAt: new Date().toISOString(),
+    }];
+    this.data.activeConnectionId = id;
+    // Karty przypisane przed podziałem na połączenia należą do tego jednego.
+    for (const card of this.data.cards) {
+      if (card.link?.provider && !card.link.connectionId) card.link.connectionId = id;
+    }
+    this.migratedConnectionId = id;
+    this.save();
   }
 
   load() {
@@ -94,7 +169,81 @@ export class Store {
       this.adapter.quarantine?.();
       this.data = structuredClone(EMPTY);
       this.flush();
+      return;
     }
+    this.#migrateConnections();
+  }
+
+  // --- połączenia z chmurą ---------------------------------------------------
+
+  listConnections() {
+    return (this.data.connections || []).map((c) => ({ ...EMPTY_CONNECTION, ...c }));
+  }
+
+  activeConnection() {
+    const list = this.listConnections();
+    if (!list.length) return null;
+    return list.find((c) => c.id === this.data.activeConnectionId) || list[0];
+  }
+
+  setActiveConnection(id) {
+    if (id && !(this.data.connections || []).some((c) => c.id === id)) {
+      throw new Error(`Nie ma połączenia o id ${id}`);
+    }
+    this.data.activeConnectionId = id || '';
+    this.save();
+    return this.activeConnection();
+  }
+
+  saveConnection(input) {
+    const list = this.data.connections || (this.data.connections = []);
+    const clean = {
+      name: String(input.name || '').trim().slice(0, 120) || 'Bez nazwy',
+      region: String(input.region || EMPTY_CONNECTION.region).slice(0, 40),
+      baseUrl: String(input.baseUrl || '').trim().replace(/\/+$/, ''),
+      clientId: String(input.clientId || '').trim().slice(0, 200),
+      username: String(input.username || '').trim().slice(0, 200),
+      cardFormat: ['dec', 'dec10', 'hex', 'hexReversed'].includes(input.cardFormat) ? input.cardFormat : 'dec',
+      dryRun: Boolean(input.dryRun),
+    };
+
+    if (input.id) {
+      const existing = list.find((c) => c.id === input.id);
+      if (!existing) throw new Error(`Nie ma połączenia o id ${input.id}`);
+      Object.assign(existing, clean);
+      this.save();
+      return { ...EMPTY_CONNECTION, ...existing };
+    }
+
+    const id = `conn-${Date.now().toString(36)}-${list.length + 1}`;
+    const created = { ...EMPTY_CONNECTION, ...clean, id, createdAt: new Date().toISOString() };
+    list.push(created);
+    if (!this.data.activeConnectionId) this.data.activeConnectionId = id;
+    this.save();
+    return created;
+  }
+
+  /** @returns {{removed: boolean, unlinkedCards: number}} */
+  deleteConnection(id) {
+    const list = this.data.connections || [];
+    const index = list.findIndex((c) => c.id === id);
+    if (index === -1) return { removed: false, unlinkedCards: 0 };
+
+    list.splice(index, 1);
+    // Karty tego klienta tracą powiązanie, ale zostają w bazie odczytów —
+    // usunięcie połączenia nie może po cichu wyczyścić historii wydań.
+    let unlinkedCards = 0;
+    for (const card of this.data.cards) {
+      if (card.link?.connectionId === id) {
+        card.link = { ...EMPTY_LINK };
+        unlinkedCards += 1;
+      }
+    }
+    if (this.data.activeConnectionId === id) {
+      this.data.activeConnectionId = list[0]?.id || '';
+    }
+    this.save();
+    return { removed: true, unlinkedCards };
   }
 
   /** Zapis odroczony — seria szybkich odczytów nie wywoła serii zapisów. */
@@ -149,6 +298,9 @@ export class Store {
     }
     next.akuvoxClientId = String(next.akuvoxClientId || '').trim().slice(0, 200);
     next.akuvoxUsername = String(next.akuvoxUsername || '').trim().slice(0, 200);
+    next.installerName = String(next.installerName || '').trim().slice(0, 120);
+    next.offlineQueue = Boolean(next.offlineQueue);
+    next.autoSync = Boolean(next.autoSync);
     this.data.settings = next;
     this.save();
     return this.getSettings();
@@ -175,8 +327,9 @@ export class Store {
   getCard(id) {
     const card = this.data.cards.find((c) => c.id === id);
     if (!card) return null;
-    // Karty zapisane przed dodaniem integracji nie mają pola link.
-    if (!card.link) card.link = { ...EMPTY_LINK };
+    // Karty zapisane przed dodaniem integracji nie mają pola link,
+    // a zapisane przed rozbudową nie mają nowszych pól.
+    card.link = { ...EMPTY_LINK, ...card.link };
     return card;
   }
 

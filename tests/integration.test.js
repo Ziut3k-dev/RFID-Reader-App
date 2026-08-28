@@ -2,7 +2,7 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { Store } from '../shared/store.js';
-import { IntegrationService, cardNumberFor } from '../shared/integration.js';
+import { IntegrationService, cardNumberFor, handoverCsv, handoverRows } from '../shared/integration.js';
 import { AKUVOX_PROFILE } from '../shared/akuvox-profile.js';
 import { RestAdapter } from '../electron/rest-adapter.js';
 import { HttpClient } from '../electron/http-client.js';
@@ -24,6 +24,7 @@ async function fakeCloud(options = {}) {
     cards: [],
     failNext401: options.failNext401 ?? 0,
     forceCommandError: options.forceCommandError ?? null,
+    swallowCards: options.swallowCards ?? false,
     residentCount: options.residentCount ?? 2,
   };
 
@@ -114,7 +115,9 @@ async function fakeCloud(options = {}) {
               if (!p[field]) return send(200, { success: false, message: `brak param.${field}` });
             }
             const rf_card_id = `card-${state.cards.length + 1}`;
-            state.cards.push({ rf_card_id, number: p.number, account_id: p.account_id });
+            if (!state.swallowCards) {
+              state.cards.push({ rf_card_id, number: p.number, account_id: p.account_id });
+            }
             return send(200, { success: true, result: { rf_card_id } });
           }
           case 'delete_user_rf_card_access_info': {
@@ -233,9 +236,10 @@ test('przypisanie karty: stan synced, identyfikator zdalny i numer w ustawionym 
   assert.equal(link.apartmentName, 'Kowalscy (101)');
   assert.ok(link.syncedAt);
 
-  // Numer poszedł tam, gdzie dokumentacja go oczekuje.
-  const sent = cloud.state.commands.at(-1);
-  assert.equal(sent.command, 'create_user_rf_card_access_info');
+  // Numer poszedł tam, gdzie dokumentacja go oczekuje. Szukamy komendy
+  // przypisania, bo po niej leci jeszcze potwierdzenie odczytem.
+  const sent = cloud.state.commands.find((c) => c.command === 'create_user_rf_card_access_info');
+  assert.ok(sent, 'powinna polecieć komenda przypisania karty');
   assert.equal(sent.param.number, '4372425');
   assert.equal(sent.param.project_id, 'p1');
   assert.equal(sent.param.residence_id, 'r1');
@@ -255,7 +259,8 @@ test('format numeru karty da się zmienić bez zmiany kodu', async () => {
   const { store, service } = setup(cloud, { cardFormat: 'hexReversed' });
   const saved = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'K' });
   await service.assign(saved.id, TARGET);
-  assert.equal(cloud.state.commands.at(-1).param.number, 'C9B74200');
+  const assignCommand = cloud.state.commands.find((c) => c.command === 'create_user_rf_card_access_info');
+  assert.equal(assignCommand.param.number, 'C9B74200');
   await cloud.close();
 });
 
@@ -342,6 +347,140 @@ test('odpowiedź 401 w trakcie pracy powoduje jedno ponowne logowanie i powtórz
   assert.equal(sites.length, 2, 'zapytanie ma się udać po odświeżeniu tokenu');
   assert.ok(cloud.state.tokenIssued >= 2);
   await cloud.close();
+});
+
+test('przypisanie potwierdza się odczytem kart mieszkańca', async () => {
+  const cloud = await fakeCloud();
+  const { store, service } = setup(cloud);
+  const card = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'Karta 1' });
+
+  const res = await service.assign(card.id, TARGET, { installerName: 'Jan Instalator' });
+  assert.equal(res.ok, true);
+  assert.equal(res.verified, true, 'karta ma być widoczna u mieszkańca po zapisie');
+
+  const link = store.getCard(card.id).link;
+  assert.equal(link.verified, true);
+  assert.ok(link.verifiedAt);
+  assert.equal(link.assignedBy, 'Jan Instalator');
+  // Po przypisaniu poleciało pytanie o poświadczenia mieszkańca.
+  assert.ok(cloud.state.commands.some((c) => c.command === 'get_user_access_info'));
+});
+
+test('brak karty po stronie chmury jest zgłaszany, a nie przemilczany', async () => {
+  const cloud = await fakeCloud();
+  const { store, service } = setup(cloud);
+  const card = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'Karta 1' });
+
+  // Chmura przyjmuje zapis, ale „gubi” kartę — dokładnie ten przypadek,
+  // przed którym ma chronić potwierdzenie odczytem.
+  cloud.state.swallowCards = true;
+  const res = await service.assign(card.id, TARGET);
+
+  assert.equal(res.ok, true, 'sam zapis się udał');
+  assert.equal(res.verified, false);
+  const link = store.getCard(card.id).link;
+  assert.equal(link.verified, false);
+  assert.match(link.error, /nie widać u mieszkańca/);
+});
+
+test('tryb offline odkłada przypisanie bez wysyłki', async () => {
+  const cloud = await fakeCloud();
+  const { store, service } = setup(cloud);
+  const card = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'Karta 1' });
+
+  const res = await service.assign(card.id, TARGET, { offline: true, installerName: 'Jan' });
+  assert.equal(res.queued, true);
+  assert.equal(cloud.state.commands.length, 0, 'nic nie leci do chmury');
+
+  const link = store.getCard(card.id).link;
+  assert.equal(link.state, 'pending');
+  assert.equal(link.residentName, 'Anna', 'cel zapisany, żeby dało się dosłać później');
+
+  // Po odzyskaniu łączności zaległe idą jednym ponowieniem.
+  const retry = await service.retryPending();
+  assert.equal(retry.ok, 1);
+  assert.equal(store.getCard(card.id).link.state, 'synced');
+  assert.equal(store.getCard(card.id).link.assignedBy, 'Jan', 'kto wydał kartę nie może zginąć w kolejce');
+});
+
+test('ostrzeżenia przed przypisaniem: karta zajęta, mieszkaniec z kartą, numer w chmurze', async () => {
+  const cloud = await fakeCloud();
+  const { store, service } = setup(cloud);
+  const first = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'Pierwsza' });
+  const second = store.createCard({ uidHex: '0042B7CA', uidDec: '2', label: 'Druga' });
+
+  assert.deepEqual(await service.checkAssign(first.id, TARGET), [], 'czysta sytuacja bez ostrzeżeń');
+
+  await service.assign(first.id, TARGET);
+
+  const warnings = await service.checkAssign(second.id, TARGET);
+  const codes = warnings.map((w) => w.code);
+  assert.ok(codes.includes('mieszkaniec-ma-karte'), JSON.stringify(codes));
+
+  const again = await service.checkAssign(first.id, TARGET);
+  const againCodes = again.map((w) => w.code);
+  assert.ok(againCodes.includes('karta-juz-przypisana'));
+  assert.ok(againCodes.includes('numer-juz-w-chmurze'));
+});
+
+test('wymiana zgubionej karty: stara odebrana i zablokowana, nowa wydana', async () => {
+  const cloud = await fakeCloud();
+  const { store, service } = setup(cloud);
+  const lost = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'Zgubiona' });
+  const fresh = store.createCard({ uidHex: '0042B7CA', uidDec: '2', label: 'Nowa' });
+  await service.assign(lost.id, TARGET);
+
+  const res = await service.replaceCard(lost.id, fresh.id, 'zgubiona w piwnicy', { installerName: 'Jan' });
+  assert.equal(res.ok, true);
+  assert.equal(res.stage, 'gotowe');
+
+  const oldCard = store.getCard(lost.id);
+  assert.equal(oldCard.active, false, 'zgubiona karta musi zostać zablokowana, nie usunięta');
+  assert.match(oldCard.note, /zgubiona w piwnicy/i);
+  assert.equal(oldCard.link.provider, '', 'stara karta nie jest już przypisana');
+
+  const newCard = store.getCard(fresh.id);
+  assert.equal(newCard.link.state, 'synced');
+  assert.equal(newCard.link.residentId, 'a1');
+  assert.equal(newCard.link.replacesCardId, lost.id);
+  assert.match(newCard.link.replacementReason, /piwnicy/);
+
+  // W chmurze została dokładnie jedna karta — nowa (UID 0042B7CA = 4372426).
+  assert.equal(cloud.state.cards.length, 1);
+  assert.equal(cloud.state.cards[0].number, '4372426');
+});
+
+test('wymiana odmawia, gdy stara karta nie jest przypisana', async () => {
+  const cloud = await fakeCloud();
+  const { store, service } = setup(cloud);
+  const a = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'A' });
+  const b = store.createCard({ uidHex: '0042B7CA', uidDec: '2', label: 'B' });
+
+  await assert.rejects(() => service.replaceCard(a.id, b.id, 'powód'), /nie jest przypisana/);
+  await assert.rejects(() => service.replaceCard(a.id, a.id, 'powód'), /ta sama karta/);
+});
+
+test('protokół przekazania zawiera wydania, stan i podpis instalatora', async () => {
+  const cloud = await fakeCloud();
+  const { store, service } = setup(cloud);
+  const card = store.createCard({ uidHex: '0042B7C9', uidDec: '1', label: 'Karta 1' });
+  await service.assign(card.id, TARGET, { installerName: 'Jan Instalator', connectionId: 'conn-1' });
+
+  const rows = handoverRows(store, { cardFormat: 'dec' });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].mieszkanie, 'Kowalscy (101)');
+  assert.equal(rows[0].mieszkaniec, 'Anna');
+  assert.equal(rows[0].numer, '4372425');
+  assert.equal(rows[0].wydal, 'Jan Instalator');
+  assert.match(rows[0].stan, /potwierdzona/);
+
+  const csv = handoverCsv(store, { cardFormat: 'dec' });
+  assert.match(csv.split('\r\n')[0], /^obiekt,mieszkanie,mieszkaniec,karta,uid,numer,stan,wydal,data,uwagi$/);
+  assert.match(csv, /Kowalscy \(101\),Anna,Karta 1,0042B7C9,4372425/);
+
+  // Filtr po połączeniu — instalator ma w bazie karty kilku klientów.
+  assert.equal(handoverRows(store, { connectionId: 'conn-1' }).length, 1);
+  assert.equal(handoverRows(store, { connectionId: 'conn-inny' }).length, 0);
 });
 
 test('każde polecenie dostaje własny 32-znakowy identyfikator', async () => {
