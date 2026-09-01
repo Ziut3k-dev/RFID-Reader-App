@@ -11,6 +11,11 @@ import { ScanService } from '../shared/service.js';
 import { detectReaders } from './reader.js';
 import { fileAdapter } from './persistence.js';
 import { PhoneBridge } from './bridge.js';
+import { SecretStore } from './secrets.js';
+import { RestAdapter } from './rest-adapter.js';
+import { HttpClient } from './http-client.js';
+import { IntegrationService, handoverCsv, handoverRows } from '../shared/integration.js';
+import { AKUVOX_CAVEATS, AKUVOX_PROFILE, AKUVOX_REGIONS, CARD_FORMATS } from '../shared/akuvox-profile.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -25,6 +30,9 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 let store;
 let service;
 let bridge;
+let secrets;
+let integration;
+let integrationHttp;
 let mainWindow = null;
 
 function dataFile() {
@@ -33,6 +41,227 @@ function dataFile() {
     return path.join(app.getAppPath(), 'data', 'rfid-data.json');
   }
   return path.join(app.getPath('userData'), 'rfid-data.json');
+}
+
+/**
+ * Adapter chmury budowany z aktywnego połączenia.
+ *
+ * Instalator obsługuje kilku klientów, więc poświadczenia są per połączenie,
+ * a nie globalne. Adapter tworzymy raz na konfigurację, bo token żyje w jego
+ * instancji — przebudowa przy każdej operacji oznaczałaby logowanie za każdym
+ * razem.
+ */
+let adapterCache = null;
+let adapterKey = '';
+
+/** Klucze sekretów są przypisane do połączenia, nie do aplikacji. */
+function secretKey(connectionId, field) {
+  return `akuvox:${connectionId}:${field}`;
+}
+
+function activeConnection() {
+  return store.activeConnection();
+}
+
+function akuvoxAdapter() {
+  const conn = activeConnection();
+  if (!conn) throw new Error('Nie ma żadnego połączenia z chmurą — dodaj je w zakładce Akuvox.');
+
+  const profile = {
+    ...AKUVOX_PROFILE,
+    providerId: 'akuvox',
+    baseUrl: conn.baseUrl || AKUVOX_PROFILE.baseUrl,
+    cardFormat: conn.cardFormat,
+  };
+  const credentials = {
+    clientId: conn.clientId,
+    clientSecret: secrets.get(secretKey(conn.id, 'clientSecret')),
+    username: conn.username,
+    password: secrets.get(secretKey(conn.id, 'password')),
+  };
+
+  const key = JSON.stringify([conn.id, profile.baseUrl, profile.cardFormat, credentials.clientId,
+    credentials.username, Boolean(credentials.clientSecret), Boolean(credentials.password), conn.dryRun]);
+  if (adapterCache && adapterKey === key) return adapterCache;
+
+  integrationHttp = new HttpClient({ retries: 2, timeoutMs: 15_000, dryRun: conn.dryRun, logSize: 60 });
+  adapterCache = new RestAdapter({ profile, credentials, http: integrationHttp });
+  adapterKey = key;
+  return adapterCache;
+}
+
+function connectionState(conn) {
+  const missing = [];
+  if (!conn.baseUrl) missing.push('adres serwera');
+  if (!conn.clientId) missing.push('client_id');
+  if (!secrets.has(secretKey(conn.id, 'clientSecret'))) missing.push('client_secret');
+  if (!conn.username) missing.push('login zarządcy');
+  if (!secrets.has(secretKey(conn.id, 'password'))) missing.push('hasło zarządcy');
+  return {
+    ...conn,
+    hasClientSecret: secrets.has(secretKey(conn.id, 'clientSecret')),
+    hasPassword: secrets.has(secretKey(conn.id, 'password')),
+    configured: missing.length === 0,
+    missing,
+    linkedCards: store.listCards().filter((c) => c.link.connectionId === conn.id).length,
+  };
+}
+
+function akuvoxStatus() {
+  const s = store.getSettings();
+  const conn = activeConnection();
+  return {
+    connections: store.listConnections().map(connectionState),
+    activeId: conn?.id || '',
+    active: conn ? connectionState(conn) : null,
+    installerName: s.installerName,
+    offlineQueue: s.offlineQueue,
+    autoSync: s.autoSync,
+    secretStorageAvailable: secrets.available,
+    regions: AKUVOX_REGIONS,
+    cardFormats: CARD_FORMATS,
+    caveats: AKUVOX_CAVEATS,
+    docs: AKUVOX_PROFILE.docs,
+    unsynced: store.listUnsyncedCards().length,
+    lastSync: lastSyncReport,
+  };
+}
+
+// --- automatyczne dosyłanie zaległych ---------------------------------------
+
+let syncTimer = null;
+let syncing = false;
+let lastSyncReport = null;
+
+/**
+ * Na budowie łączność wraca i znika. Zamiast kazać instalatorowi pamiętać
+ * o przycisku, próbujemy dosłać zaległe w tle — ale tylko gdy jest co dosyłać
+ * i gdy nie jest włączony tryb offline.
+ */
+async function syncTick() {
+  if (syncing) return;
+  const s = store.getSettings();
+  if (!s.autoSync || s.offlineQueue) return;
+  if (!store.listUnsyncedCards().length) return;
+  const conn = activeConnection();
+  if (!conn || !connectionState(conn).configured) return;
+
+  syncing = true;
+  try {
+    const report = await integration.retryPending({ installerName: s.installerName });
+    lastSyncReport = { at: new Date().toISOString(), ...report, results: undefined };
+    mainWindow?.webContents.send('akuvox:sync', lastSyncReport);
+  } catch (err) {
+    lastSyncReport = { at: new Date().toISOString(), total: 0, ok: 0, error: err.message };
+  } finally {
+    syncing = false;
+  }
+}
+
+function startAutoSync() {
+  if (syncTimer) return;
+  // Minuta to kompromis: dość szybko po powrocie sieci, a przy braku łączności
+  // nie zasypuje dziennika próbami.
+  syncTimer = setInterval(() => void syncTick(), 60_000);
+}
+
+/** Przenosi sekrety z jednej globalnej konfiguracji na połączenie. */
+function migrateSecrets() {
+  const id = store.migratedConnectionId;
+  if (!id) return;
+  for (const [oldKey, field] of [['akuvoxClientSecret', 'clientSecret'], ['akuvoxPassword', 'password']]) {
+    const value = secrets.get(oldKey);
+    if (value && !secrets.has(secretKey(id, field))) {
+      secrets.set(secretKey(id, field), value);
+      secrets.set(oldKey, '');
+    }
+  }
+}
+
+async function saveHandover(kind, options = {}) {
+  const conn = activeConnection();
+  const rows = handoverRows(store, {
+    connectionId: options.connectionId ?? conn?.id ?? '',
+    siteId: options.siteId || '',
+    cardFormat: conn?.cardFormat || 'dec',
+  });
+  if (!rows.length) return { ok: false, empty: true };
+
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const name = `protokol-przekazania-${stamp}.${kind === 'pdf' ? 'pdf' : 'csv'}`;
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Protokół przekazania kart',
+    defaultPath: path.join(app.getPath('downloads'), name),
+    filters: [{ name: kind === 'pdf' ? 'PDF' : 'CSV', extensions: [kind === 'pdf' ? 'pdf' : 'csv'] }],
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+
+  if (kind === 'csv') {
+    fs.writeFileSync(filePath, '\ufeff' + handoverCsv(store, {
+      connectionId: options.connectionId ?? conn?.id ?? '',
+      siteId: options.siteId || '',
+      cardFormat: conn?.cardFormat || 'dec',
+    }), 'utf8');
+    return { ok: true, filePath, rows: rows.length };
+  }
+
+  const pdf = await renderHandoverPdf(rows, conn);
+  fs.writeFileSync(filePath, pdf);
+  return { ok: true, filePath, rows: rows.length };
+}
+
+/**
+ * PDF składamy Chromiumem wbudowanym w Electrona (printToPDF) — bez biblioteki
+ * do generowania dokumentów. Protokół jest do podpisania, więc ma miejsca na
+ * podpisy i datę.
+ */
+async function renderHandoverPdf(rows, conn) {
+  const esc = (t) => String(t ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+  const settings = store.getSettings();
+  const today = new Date().toLocaleDateString('pl-PL');
+
+  const html = `<!doctype html><meta charset="utf-8"><style>
+    body { font: 11px/1.45 -apple-system, system-ui, sans-serif; color: #111; margin: 24px; }
+    h1 { font-size: 17px; margin: 0 0 4px; }
+    .meta { color: #555; font-size: 10.5px; margin-bottom: 14px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #bbb; padding: 5px 6px; text-align: left; vertical-align: top; }
+    th { background: #eee; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+    td.mono { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; }
+    .signatures { margin-top: 34px; display: flex; gap: 40px; }
+    .signatures div { flex: 1; border-top: 1px solid #333; padding-top: 5px; font-size: 10px; color: #444; }
+  </style>
+  <h1>Protokół przekazania kart zbliżeniowych</h1>
+  <div class="meta">
+    Obiekt: <strong>${esc(rows[0]?.obiekt || '—')}</strong> ·
+    Połączenie: ${esc(conn?.name || '—')} ·
+    Kart: <strong>${rows.length}</strong> ·
+    Data: ${esc(today)}${settings.installerName ? ` · Wydał: <strong>${esc(settings.installerName)}</strong>` : ''}
+  </div>
+  <table>
+    <thead><tr>
+      <th>Mieszkanie</th><th>Mieszkaniec</th><th>Karta</th><th>UID</th><th>Numer</th><th>Stan</th><th>Uwagi</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map((r) => `<tr>
+        <td>${esc(r.mieszkanie)}</td><td>${esc(r.mieszkaniec)}</td><td>${esc(r.karta)}</td>
+        <td class="mono">${esc(r.uid)}</td><td class="mono">${esc(r.numer)}</td>
+        <td>${esc(r.stan)}</td><td>${esc(r.uwagi)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  <div class="signatures">
+    <div>Wydał (instalator)${settings.installerName ? `: ${esc(settings.installerName)}` : ''}</div>
+    <div>Odebrał (zarządca / właściciel)</div>
+  </div>`;
+
+  const win = new BrowserWindow({ show: false, webPreferences: { offscreen: true, javascript: false } });
+  try {
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    return await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4', landscape: rows.length > 0 });
+  } finally {
+    win.destroy();
+  }
 }
 
 function distDir() {
@@ -195,6 +424,57 @@ function registerIpc() {
     return true;
   });
 
+  // --- integracja z chmurą Akuvox -----------------------------------------
+  handle('akuvox:status', () => akuvoxStatus());
+  handle('akuvox:save-connection', (input = {}) => {
+    const { clientSecret, password, ...rest } = input;
+    const conn = store.saveConnection(rest);
+    // Sekrety idą do magazynu szyfrowanego systemowo, nie do pliku z kartami.
+    if (clientSecret) secrets.set(secretKey(conn.id, 'clientSecret'), clientSecret);
+    if (password) secrets.set(secretKey(conn.id, 'password'), password);
+    adapterCache = null;
+    return akuvoxStatus();
+  });
+  handle('akuvox:delete-connection', ({ id }) => {
+    const result = store.deleteConnection(id);
+    secrets.set(secretKey(id, 'clientSecret'), '');
+    secrets.set(secretKey(id, 'password'), '');
+    adapterCache = null;
+    return { ...result, status: akuvoxStatus() };
+  });
+  handle('akuvox:activate-connection', ({ id }) => {
+    store.setActiveConnection(id);
+    adapterCache = null;
+    return akuvoxStatus();
+  });
+  handle('akuvox:save-options', (patch = {}) => {
+    store.setSettings(patch);
+    return akuvoxStatus();
+  });
+  handle('akuvox:test', () => integration.test());
+  handle('akuvox:check', ({ cardId, target }) => integration.checkAssign(cardId, target));
+  handle('akuvox:verify', ({ cardId }) => integration.verify(cardId));
+  handle('akuvox:replace', ({ oldCardId, newCardId, reason }) => integration.replaceCard(oldCardId, newCardId, reason, {
+    connectionId: activeConnection()?.id,
+    installerName: store.getSettings().installerName,
+  }));
+  handle('akuvox:handover', ({ kind, siteId }) => saveHandover(kind, { siteId }));
+  handle('akuvox:sites', () => integration.sites());
+  handle('akuvox:apartments', ({ siteId }) => integration.apartments(siteId));
+  handle('akuvox:residents', ({ siteId, apartmentId }) => integration.residents(siteId, apartmentId));
+  handle('akuvox:resident-cards', (target) => integration.residentCards(target));
+  handle('akuvox:assign', ({ cardId, target }) => {
+    const s = store.getSettings();
+    return integration.assign(cardId, target, {
+      connectionId: activeConnection()?.id,
+      installerName: s.installerName,
+      offline: s.offlineQueue,
+    });
+  });
+  handle('akuvox:unassign', ({ cardId }) => integration.unassign(cardId));
+  handle('akuvox:retry', () => integration.retryPending({ installerName: store.getSettings().installerName }));
+  handle('akuvox:log', () => (integrationHttp ? integrationHttp.recentLog() : []));
+
   handle('stats:get', () => store.stats());
   handle('settings:get', () => store.getSettings());
   handle('settings:set', (patch) => store.setSettings(patch || {}));
@@ -246,6 +526,10 @@ if (!app.requestSingleInstanceLock()) {
     applyContentSecurityPolicy();
     store = new Store(fileAdapter(dataFile()));
     service = new ScanService(store);
+    secrets = new SecretStore(path.join(path.dirname(dataFile()), 'rfid-secrets.bin'));
+    migrateSecrets();
+    integration = new IntegrationService({ store, adapter: () => akuvoxAdapter() });
+    startAutoSync();
     bridge = new PhoneBridge({
       store,
       service,
@@ -277,5 +561,6 @@ if (!app.requestSingleInstanceLock()) {
     // Zapis jest odroczony — przed wyjściem wymuszamy zrzut na dysk.
     try { store?.flush(); } catch { /* ignorujemy */ }
     try { void bridge?.stop(); } catch { /* ignorujemy */ }
+    if (syncTimer) clearInterval(syncTimer);
   });
 }

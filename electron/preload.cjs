@@ -51,6 +51,32 @@ contextBridge.exposeInMainWorld('rfid', {
     return () => ipcRenderer.removeListener('bridge:scan', listener);
   },
 
+  akuvoxStatus: () => call('akuvox:status'),
+  akuvoxSaveConnection: (input) => call('akuvox:save-connection', input),
+  akuvoxDeleteConnection: (id) => call('akuvox:delete-connection', { id }),
+  akuvoxActivateConnection: (id) => call('akuvox:activate-connection', { id }),
+  akuvoxSaveOptions: (patch) => call('akuvox:save-options', patch),
+  akuvoxTest: () => call('akuvox:test'),
+  akuvoxCheck: (cardId, target) => call('akuvox:check', { cardId, target }),
+  akuvoxVerify: (cardId) => call('akuvox:verify', { cardId }),
+  akuvoxReplace: (oldCardId, newCardId, reason) => call('akuvox:replace', { oldCardId, newCardId, reason }),
+  akuvoxHandover: (kind, siteId) => call('akuvox:handover', { kind, siteId }),
+
+  /** Powiadomienia o automatycznym dosyłaniu zaległych przypisań. */
+  onAkuvoxSync: (callback) => {
+    const listener = (_event, report) => callback(report);
+    ipcRenderer.on('akuvox:sync', listener);
+    return () => ipcRenderer.removeListener('akuvox:sync', listener);
+  },
+  akuvoxSites: () => call('akuvox:sites'),
+  akuvoxApartments: (siteId) => call('akuvox:apartments', { siteId }),
+  akuvoxResidents: (siteId, apartmentId) => call('akuvox:residents', { siteId, apartmentId }),
+  akuvoxResidentCards: (target) => call('akuvox:resident-cards', target),
+  akuvoxAssign: (cardId, target) => call('akuvox:assign', { cardId, target }),
+  akuvoxUnassign: (cardId) => call('akuvox:unassign', { cardId }),
+  akuvoxRetry: () => call('akuvox:retry'),
+  akuvoxLog: () => call('akuvox:log'),
+
   exportCsv: (kind) => call('export:csv', { kind }),
   detectReaders: () => call('reader:detect'),
   appInfo: () => call('app:info'),

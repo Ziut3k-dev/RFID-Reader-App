@@ -10,7 +10,7 @@
 
 import { Store } from '../shared/store.js';
 import { ScanService } from '../shared/service.js';
-import type { AppInfo, BridgeStatus, Card, CardInput, Inspection, ReaderInfo, RfidApi, ScanQuery, ScanResult, Settings, Stats } from './types';
+import type { AkuvoxStatus, AppInfo, BridgeStatus, Card, CardInput, Inspection, ReaderInfo, RfidApi, ScanQuery, ScanResult, Settings, Stats } from './types';
 
 const STORAGE_KEY = 'rfid-scanner-data';
 
@@ -45,6 +45,26 @@ function webBridgeStatus(): BridgeStatus {
     error: 'Serwer telefonu wymaga aplikacji Electron — w podglądzie przeglądarkowym nie działa.',
     addresses: [],
     urls: [],
+  };
+}
+
+const BEZ_ELECTRONA = 'Integracja z chmurą działa tylko w aplikacji — podgląd w przeglądarce nie ma procesu głównego.';
+
+function webAkuvoxStatus(): AkuvoxStatus {
+  return {
+    connections: [],
+    activeId: '',
+    active: null,
+    installerName: '',
+    offlineQueue: false,
+    autoSync: false,
+    secretStorageAvailable: false,
+    regions: [],
+    cardFormats: [],
+    caveats: [BEZ_ELECTRONA],
+    docs: 'https://developer.akubela.com',
+    unsynced: 0,
+    lastSync: null,
   };
 }
 
@@ -84,6 +104,26 @@ function createWebApi(): RfidApi {
     bridgeRestart: async () => webBridgeStatus(),
     bridgeRegenerateToken: async () => webBridgeStatus(),
     onPhoneScan: () => () => {},
+
+    akuvoxStatus: async () => webAkuvoxStatus(),
+    akuvoxSaveConnection: async () => webAkuvoxStatus(),
+    akuvoxDeleteConnection: async () => ({ removed: false, unlinkedCards: 0, status: webAkuvoxStatus() }),
+    akuvoxActivateConnection: async () => webAkuvoxStatus(),
+    akuvoxSaveOptions: async () => webAkuvoxStatus(),
+    akuvoxTest: async () => ({ ok: false, steps: [{ step: 'środowisko', ok: false, detail: BEZ_ELECTRONA }] }),
+    akuvoxCheck: async () => [],
+    akuvoxVerify: async () => ({ verified: false, error: BEZ_ELECTRONA }),
+    akuvoxReplace: async () => ({ ok: false, stage: 'środowisko', error: BEZ_ELECTRONA }),
+    akuvoxHandover: async () => ({ ok: false, empty: true }),
+    onAkuvoxSync: () => () => {},
+    akuvoxSites: async () => [],
+    akuvoxApartments: async () => [],
+    akuvoxResidents: async () => [],
+    akuvoxResidentCards: async () => [],
+    akuvoxAssign: async () => ({ ok: false, error: BEZ_ELECTRONA }),
+    akuvoxUnassign: async () => ({ ok: false, error: BEZ_ELECTRONA }),
+    akuvoxRetry: async () => ({ total: 0, ok: 0 }),
+    akuvoxLog: async () => [],
 
     detectReaders: async (): Promise<ReaderInfo> => ({
       supported: false,

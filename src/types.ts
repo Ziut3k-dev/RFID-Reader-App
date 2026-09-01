@@ -15,6 +15,158 @@ export interface Uid {
   source: 'dec' | 'hex' | 'wiegand';
 }
 
+/** Powiązanie karty z systemem zewnętrznym (chmura Akuvox). */
+export interface CardLink {
+  provider: string;
+  connectionId: string;
+  siteId: string;
+  siteName: string;
+  apartmentId: string;
+  apartmentName: string;
+  residentId: string;
+  residentName: string;
+  remoteId: string;
+  state: 'none' | 'pending' | 'synced' | 'error' | 'removing';
+  syncedAt: string;
+  error: string;
+  verified: boolean;
+  verifiedAt: string;
+  assignedBy: string;
+  replacesCardId: number;
+  replacementReason: string;
+}
+
+export interface AkuvoxRegion {
+  id: string;
+  name: string;
+  baseUrl: string;
+}
+
+export interface AkuvoxCardFormat {
+  id: string;
+  name: string;
+  hint: string;
+}
+
+/** Połączenie z chmurą jednego klienta wraz ze stanem konfiguracji. */
+export interface AkuvoxConnection {
+  id: string;
+  name: string;
+  region: string;
+  baseUrl: string;
+  clientId: string;
+  username: string;
+  cardFormat: string;
+  dryRun: boolean;
+  createdAt: string;
+  hasClientSecret: boolean;
+  hasPassword: boolean;
+  configured: boolean;
+  missing: string[];
+  linkedCards: number;
+}
+
+export interface SyncReport {
+  at: string;
+  total: number;
+  ok: number;
+  error?: string;
+}
+
+export interface AkuvoxStatus {
+  connections: AkuvoxConnection[];
+  activeId: string;
+  active: AkuvoxConnection | null;
+  installerName: string;
+  offlineQueue: boolean;
+  autoSync: boolean;
+  secretStorageAvailable: boolean;
+  regions: AkuvoxRegion[];
+  cardFormats: AkuvoxCardFormat[];
+  caveats: string[];
+  docs: string;
+  unsynced: number;
+  lastSync: SyncReport | null;
+}
+
+export interface AkuvoxConnectionInput {
+  id?: string;
+  name: string;
+  region?: string;
+  baseUrl: string;
+  clientId: string;
+  username: string;
+  cardFormat?: string;
+  dryRun?: boolean;
+  clientSecret?: string;
+  password?: string;
+}
+
+export interface AkuvoxOptions {
+  installerName?: string;
+  offlineQueue?: boolean;
+  autoSync?: boolean;
+}
+
+export interface AssignWarning {
+  code: string;
+  text: string;
+}
+
+/** Pozycja listy z chmury (obiekt, mieszkanie, mieszkaniec). */
+export interface RemoteItem {
+  id: string;
+  name: string;
+  extra?: string;
+}
+
+export interface AkuvoxTestResult {
+  ok: boolean;
+  steps: { step: string; ok: boolean; detail: string }[];
+  sites?: RemoteItem[];
+}
+
+export interface AkuvoxTarget {
+  siteId: string;
+  siteName?: string;
+  apartmentId: string;
+  apartmentName?: string;
+  residentId: string;
+  residentName?: string;
+}
+
+export interface AkuvoxAssignResult {
+  ok: boolean;
+  card?: Card;
+  cardNumber?: string;
+  remoteId?: string;
+  error?: string;
+  queued?: boolean;
+  verified?: boolean;
+  verifyError?: string;
+}
+
+export interface AkuvoxReplaceResult {
+  ok: boolean;
+  stage: string;
+  error?: string;
+  removedLocalOnly?: boolean;
+  assignment?: AkuvoxAssignResult;
+}
+
+export interface RequestLogEntry {
+  at: string;
+  method: string;
+  url: string;
+  status: number | null;
+  ms: number;
+  attempts: number;
+  dryRun: boolean;
+  error: string | null;
+  body?: unknown;
+  response?: unknown;
+}
+
 export interface Card {
   id: number;
   uidHex: string;
@@ -27,6 +179,7 @@ export interface Card {
   validFrom: string | null;
   validTo: string | null;
   note: string;
+  link: CardLink;
   createdAt: string;
   updatedAt: string;
   scanCount?: number;
@@ -177,5 +330,25 @@ export interface RfidApi {
   /** Subskrypcja odczytów z telefonu; zwraca funkcję odsubskrybowania. */
   onPhoneScan(callback: (result: ScanResult) => void): () => void;
   detectReaders(): Promise<ReaderInfo>;
+
+  akuvoxStatus(): Promise<AkuvoxStatus>;
+  akuvoxSaveConnection(input: AkuvoxConnectionInput): Promise<AkuvoxStatus>;
+  akuvoxDeleteConnection(id: string): Promise<{ removed: boolean; unlinkedCards: number; status: AkuvoxStatus }>;
+  akuvoxActivateConnection(id: string): Promise<AkuvoxStatus>;
+  akuvoxSaveOptions(patch: AkuvoxOptions): Promise<AkuvoxStatus>;
+  akuvoxTest(): Promise<AkuvoxTestResult>;
+  akuvoxCheck(cardId: number, target: AkuvoxTarget): Promise<AssignWarning[]>;
+  akuvoxVerify(cardId: number): Promise<{ verified: boolean; number?: string; error?: string }>;
+  akuvoxReplace(oldCardId: number, newCardId: number, reason: string): Promise<AkuvoxReplaceResult>;
+  akuvoxHandover(kind: 'csv' | 'pdf', siteId?: string): Promise<{ ok: boolean; empty?: boolean; canceled?: boolean; filePath?: string; rows?: number }>;
+  onAkuvoxSync(callback: (report: SyncReport) => void): () => void;
+  akuvoxSites(): Promise<RemoteItem[]>;
+  akuvoxApartments(siteId: string): Promise<RemoteItem[]>;
+  akuvoxResidents(siteId: string, apartmentId?: string): Promise<RemoteItem[]>;
+  akuvoxResidentCards(target: AkuvoxTarget): Promise<RemoteItem[]>;
+  akuvoxAssign(cardId: number, target: AkuvoxTarget): Promise<AkuvoxAssignResult>;
+  akuvoxUnassign(cardId: number): Promise<{ ok: boolean; localOnly?: boolean; message?: string; error?: string }>;
+  akuvoxRetry(): Promise<{ total: number; ok: number }>;
+  akuvoxLog(): Promise<RequestLogEntry[]>;
   appInfo(): Promise<AppInfo>;
 }
