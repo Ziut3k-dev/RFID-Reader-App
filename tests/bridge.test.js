@@ -22,18 +22,32 @@ function memoryAdapter() {
   return { label: 'memory', read: () => text, write: (v) => { text = v; }, quarantine: () => { text = null; } };
 }
 
-/** Uruchamia serwer na losowym wysokim porcie i zwraca pomocniki do zapytań. */
+/**
+ * Uruchamia serwer na wolnym porcie i zwraca pomocniki do zapytań.
+ *
+ * Port losujemy z zakresu 20000–32000, czyli poniżej portów efemerycznych
+ * Linuksa (32768–60999) — inaczej trafiamy na port zajęty przez połączenie
+ * wychodzące innego procesu. Do tego ponawiamy, bo zakres nie daje gwarancji.
+ */
 async function startBridge(settings = {}) {
   const store = new Store(memoryAdapter());
-  const port = 20000 + Math.floor(Math.random() * 20000);
-  store.setSettings({ debounceSeconds: 0, bridgePort: port, ...settings });
   const service = new ScanService(store);
   const scans = [];
   const dist = fakeDist();
   const bridge = new PhoneBridge({ store, service, distDir: dist, onScan: (r) => scans.push(r) });
 
-  const status = await bridge.start();
-  assert.equal(status.running, true, `serwer nie wystartował: ${status.error}`);
+  let status = null;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    store.setSettings({
+      debounceSeconds: 0,
+      bridgePort: 20000 + Math.floor(Math.random() * 12000),
+      ...settings,
+    });
+    status = await bridge.start();
+    if (status.running) break;
+    await bridge.stop();
+  }
+  assert.equal(status.running, true, `serwer nie wystartował: ${status?.error}`);
 
   const base = `http://127.0.0.1:${status.port}`;
   return {
